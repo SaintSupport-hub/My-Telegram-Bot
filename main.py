@@ -1,7 +1,9 @@
 import os
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+import threading
+from flask import Flask
 import google.generativeai as genai
+from telegram import Update
+from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GEMINI_KEY = os.getenv("GEMINI_KEY")
@@ -9,16 +11,30 @@ GEMINI_KEY = os.getenv("GEMINI_KEY")
 genai.configure(api_key=GEMINI_KEY)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hey! I'm live on Render ✅ Send me anything.")
+# --- Flask fake web server to keep Render happy ---
+app = Flask(__name__)
+@app.route("/")
+def home():
+    return "Bot is running!"
 
-async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-    response = model.generate_content(update.message.text)
-    await update.message.reply_text(response.text)
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+# --- Telegram Bot ---
+async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_text = update.message.text
+    try:
+        response = model.generate_content(user_text)
+        await update.message.reply_text(response.text)
+    except Exception as e:
+        await update.message.reply_text(f"Error: {e}")
+
+def run_bot():
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply))
+    application.run_polling()
 
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
-    app.run_polling()
+    threading.Thread(target=run_web).start()
+    run_bot()
