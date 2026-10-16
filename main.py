@@ -45,8 +45,8 @@ def is_admin(uid):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [
         [InlineKeyboardButton("🛒 Shop CC", callback_data="shop")],
-        [InlineKeyboardButton("🥊 Shop Accounts", callback_data="shop_accounts")],
-        [InlineKeyboardButton("🥇 Shop BINs", callback_data="shop_bins")],
+        [InlineKeyboardButton("🥊 Shop Accounts", callback_data="shop_tees")],
+        [InlineKeyboardButton("🥇 Shop BINs", callback_data="shop_accessories")],
         [InlineKeyboardButton("💬 SUPPORT", callback_data="support")]
     ]
     await update.message.reply_text("Welcome to SAINTLOCK CC 🔒", reply_markup=InlineKeyboardMarkup(kb))
@@ -69,13 +69,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     d = q.data
 
     if d in FILES:
-        names = {"shop": "🛒 Shop CC", "shop_accounts": "🥊 Shop accounts", "shop_bins": "🥇 Shop BINs"}
+        names = {"shop": "🛒 Shop CC", "shop_tees": "👕 Shop Tees", "shop_accessories": "🏷️ Shop Accessories"}
         await show_category(q, d, names[d])
     elif d == "back":
         kb = [
             [InlineKeyboardButton("🛒 Shop CC", callback_data="shop")],
-            [InlineKeyboardButton("🥊 Shop Accounts", callback_data="shop_accounts")],
-            [InlineKeyboardButton("🥇 Shop BINs", callback_data="shop_accessories")],
+            [InlineKeyboardButton("👕 Shop Tees", callback_data="shop_tees")],
+            [InlineKeyboardButton("🏷️ Shop Accessories", callback_data="shop_accessories")],
             [InlineKeyboardButton("💬 SUPPORT", callback_data="support")]
         ]
         await q.edit_message_text("Welcome to SAINTLOCK CC 🔒", reply_markup=InlineKeyboardMarkup(kb))
@@ -83,14 +83,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb = [[InlineKeyboardButton("⬅️ Back", callback_data="back")]]
         await q.edit_message_text(f"💬 SUPPORT\n\nCashApp: {CASHAPP_TAG}\nBTC: {BTC_WALLET}", reply_markup=InlineKeyboardMarkup(kb))
     elif d.startswith("view_"):
-        # view_shop_0 or view_shop_accounts_0
+        # view_shop_0 or view_shop_tees_0
         rest = d.replace("view_", "")
-        if rest.startswith("shop_accounts_"):
-            cat_key = "shop_accounts"
-            idx = int(rest.replace("shop_accounts_", ""))
-        elif rest.startswith("shop_bins_"):
-            cat_key = "shop_bins"
-            idx = int(rest.replace("shop_bins_", ""))
+        if rest.startswith("shop_tees_"):
+            cat_key = "shop_tees"
+            idx = int(rest.replace("shop_tees_", ""))
+        elif rest.startswith("shop_accessories_"):
+            cat_key = "shop_accessories"
+            idx = int(rest.replace("shop_accessories_", ""))
         else:
             cat_key = "shop"
             idx = int(rest.replace("shop_", ""))
@@ -141,5 +141,4 @@ def run_bot():
     app_bot.run_polling()
 
 if __name__ == "__main__":
-    threading.Thread(target=run_web).start()
-    run_bot()
+    threading.Thread(target=ru
