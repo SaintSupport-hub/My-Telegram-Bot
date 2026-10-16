@@ -12,7 +12,6 @@ CASHAPP_TAG = os.getenv("CASHAPP_TAG", "$Saintlockecon")
 
 genai.configure(api_key=GEMINI_KEY)
 
-# KEEP YOUR 3 OLD ITEMS - they are in products.json
 FILES = {
     "shop": "products.json",
     "shop_tees": "products_tees.json",
@@ -36,6 +35,7 @@ app = Flask(__name__)
 @app.route("/")
 def home():
     return "SAINTLOCK LIVE"
+
 def run_web():
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
@@ -55,7 +55,7 @@ async def show_category(query, cat_key, title):
     products = load_json(FILES[cat_key], [])
     if not products:
         kb = [[InlineKeyboardButton("⬅️ Back", callback_data="back")]]
-        await query.edit_message_text(f"{title} empty.\nAdd: /addproduct {cat_key} | Name | Price | Desc", reply_markup=InlineKeyboardMarkup(kb))
+        await query.edit_message_text(f"{title} empty. Add: /addproduct {cat_key} | Name | Price | Desc", reply_markup=InlineKeyboardMarkup(kb))
         return
     kb = []
     for i, p in enumerate(products):
@@ -67,7 +67,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     d = q.data
-
     if d in FILES:
         names = {"shop": "🛒 Shop CC", "shop_tees": "👕 Shop Tees", "shop_accessories": "🏷️ Shop Accessories"}
         await show_category(q, d, names[d])
@@ -83,7 +82,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb = [[InlineKeyboardButton("⬅️ Back", callback_data="back")]]
         await q.edit_message_text(f"💬 SUPPORT\n\nCashApp: {CASHAPP_TAG}\nBTC: {BTC_WALLET}", reply_markup=InlineKeyboardMarkup(kb))
     elif d.startswith("view_"):
-        # view_shop_0 or view_shop_tees_0
         rest = d.replace("view_", "")
         if rest.startswith("shop_tees_"):
             cat_key = "shop_tees"
@@ -130,7 +128,7 @@ async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for k, path in FILES.items():
         ps = load_json(path, [])
         txt += f"{k}: {len(ps)} items\n"
-    await update.message.reply_text(txt)
+    await update.message.reply_text(txt or "No products")
 
 def run_bot():
     app_bot = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -141,4 +139,5 @@ def run_bot():
     app_bot.run_polling()
 
 if __name__ == "__main__":
-    threading.Thread(target=ru
+    threading.Thread(target=run_web).start()
+    run_bot()
