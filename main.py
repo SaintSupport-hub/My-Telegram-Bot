@@ -68,13 +68,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     d = q.data
     if d in FILES:
-        names = {"shop": "🛒 Shop CC", "shop_tees": "👕 Shop Tees", "shop_accessories": "🏷️ Shop Accessories"}
+        names = {"shop": "🛒 Shop CC", "shop_tees": "🥊 Shop Accounts", "shop_accessories": "🥇 Shop BINs"}
         await show_category(q, d, names[d])
     elif d == "back":
         kb = [
             [InlineKeyboardButton("🛒 Shop CC", callback_data="shop")],
-            [InlineKeyboardButton("👕 Shop Tees", callback_data="shop_tees")],
-            [InlineKeyboardButton("🏷️ Shop Accessories", callback_data="shop_accessories")],
+            [InlineKeyboardButton("🥊 Shop Accounts", callback_data="shop_tees")],
+            [InlineKeyboardButton("🥇 Shop BINs", callback_data="shop_accessories")],
             [InlineKeyboardButton("💬 SUPPORT", callback_data="support")]
         ]
         await q.edit_message_text("Welcome to SAINTLOCK CC 🔒", reply_markup=InlineKeyboardMarkup(kb))
