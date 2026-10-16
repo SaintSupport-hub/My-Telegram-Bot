@@ -39,7 +39,7 @@ def is_admin(uid):
     return uid == ADMIN_ID
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    kb = [[InlineKeyboardButton("🛒 Shop CLAPCakes", callback_data="shop")]]
+    kb = [[InlineKeyboardButton("🛒 Shop CC", callback_data="shop")]]
     await update.message.reply_text("Welcome to SAINTLOCK CC 🔒", reply_markup=InlineKeyboardMarkup(kb))
 
 async def show_shop(q, c):
