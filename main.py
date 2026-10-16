@@ -1,9 +1,8 @@
-import os, json, random, threading
-from datetime import datetime
+import os, json, threading
 from flask import Flask
 import google.generativeai as genai
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GEMINI_KEY = os.getenv("GEMINI_KEY")
@@ -12,9 +11,13 @@ BTC_WALLET = os.getenv("BTC_WALLET", "bc1qftk75wjqwutjczsth2axmgnj8a03rdgu0htd39
 CASHAPP_TAG = os.getenv("CASHAPP_TAG", "$Saintlockecon")
 
 genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
 
-PRODUCTS_FILE = "products.json"
+# KEEP YOUR 3 OLD ITEMS - they are in products.json
+FILES = {
+    "shop": "products.json",
+    "shop_tees": "products_tees.json",
+    "shop_accessories": "products_accessories.json"
+}
 
 def load_json(path, default):
     if not os.path.exists(path):
@@ -31,7 +34,8 @@ def save_json(path, data):
 
 app = Flask(__name__)
 @app.route("/")
-def home(): return "SAINTLOCK CC LIVE"
+def home():
+    return "SAINTLOCK LIVE"
 def run_web():
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
@@ -39,54 +43,93 @@ def is_admin(uid):
     return uid == ADMIN_ID
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    kb = [[InlineKeyboardButton("🛒 Shop CC", callback_data="shop")]]
+    kb = [
+        [InlineKeyboardButton("🛒 Shop CC", callback_data="shop")],
+        [InlineKeyboardButton("🥊 Shop Accounts", callback_data="shop_accounts")],
+        [InlineKeyboardButton("🥇 Shop BINs", callback_data="shop_bins")],
+        [InlineKeyboardButton("💬 SUPPORT", callback_data="support")]
+    ]
     await update.message.reply_text("Welcome to SAINTLOCK CC 🔒", reply_markup=InlineKeyboardMarkup(kb))
 
-async def show_shop(q, c):
-    products = load_json(PRODUCTS_FILE, [])
+async def show_category(query, cat_key, title):
+    products = load_json(FILES[cat_key], [])
     if not products:
-        await q.edit_message_text("Shop empty. Add with /addproduct")
+        kb = [[InlineKeyboardButton("⬅️ Back", callback_data="back")]]
+        await query.edit_message_text(f"{title} empty.\nAdd: /addproduct {cat_key} | Name | Price | Desc", reply_markup=InlineKeyboardMarkup(kb))
         return
-    kb = [[InlineKeyboardButton(f"{p['name']} - ${p['price']}", callback_data=f"prod_{i}")] for i,p in enumerate(products)]
-    await q.edit_message_text("🛒 Shop:", reply_markup=InlineKeyboardMarkup(kb))
+    kb = []
+    for i, p in enumerate(products):
+        kb.append([InlineKeyboardButton(f"{p['name']} - ${p['price']}", callback_data=f"view_{cat_key}_{i}")])
+    kb.append([InlineKeyboardButton("⬅️ Back", callback_data="back")])
+    await query.edit_message_text(f"{title}:", reply_markup=InlineKeyboardMarkup(kb))
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if query.data == "shop":
-        await show_shop(query, context)
-    elif query.data.startswith("prod_"):
-        idx = int(query.data.split("_")[1])
-        products = load_json(PRODUCTS_FILE, [])
-        p = products[idx]
-        await query.message.reply_text(f"✅ You selected: {p['name']} - ${p['price']}\nDesc: {p['desc']}")
-        pay_kb = [[InlineKeyboardButton("₿ Pay BTC", callback_data="pay_crypto")],[InlineKeyboardButton("💵 CashApp", callback_data="pay_cash")]]
-        await query.message.reply_text("Choose payment:", reply_markup=InlineKeyboardMarkup(pay_kb))
-    elif query.data == "pay_crypto":
-        await query.message.reply_text(f"₿ Send BTC to:\n`{BTC_WALLET}`\n\nNetwork: Bitcoin", parse_mode="Markdown")
-    elif query.data == "pay_cash":
-        await query.message.reply_text(f"💵 Send CashApp to:\n`{CASHAPP_TAG}`", parse_mode="Markdown")
+    q = update.callback_query
+    await q.answer()
+    d = q.data
+
+    if d in FILES:
+        names = {"shop": "🛒 Shop CC", "shop_accounts": "🥊 Shop accounts", "shop_bins": "🥇 Shop BINs"}
+        await show_category(q, d, names[d])
+    elif d == "back":
+        kb = [
+            [InlineKeyboardButton("🛒 Shop CC", callback_data="shop")],
+            [InlineKeyboardButton("🥊 Shop Accounts", callback_data="shop_accounts")],
+            [InlineKeyboardButton("🥇 Shop BINs", callback_data="shop_accessories")],
+            [InlineKeyboardButton("💬 SUPPORT", callback_data="support")]
+        ]
+        await q.edit_message_text("Welcome to SAINTLOCK CC 🔒", reply_markup=InlineKeyboardMarkup(kb))
+    elif d == "support":
+        kb = [[InlineKeyboardButton("⬅️ Back", callback_data="back")]]
+        await q.edit_message_text(f"💬 SUPPORT\n\nCashApp: {CASHAPP_TAG}\nBTC: {BTC_WALLET}", reply_markup=InlineKeyboardMarkup(kb))
+    elif d.startswith("view_"):
+        # view_shop_0 or view_shop_accounts_0
+        rest = d.replace("view_", "")
+        if rest.startswith("shop_accounts_"):
+            cat_key = "shop_accounts"
+            idx = int(rest.replace("shop_accounts_", ""))
+        elif rest.startswith("shop_bins_"):
+            cat_key = "shop_bins"
+            idx = int(rest.replace("shop_bins_", ""))
+        else:
+            cat_key = "shop"
+            idx = int(rest.replace("shop_", ""))
+        p = load_json(FILES[cat_key], [])[idx]
+        await q.message.reply_text(f"✅ {p['name']} - ${p['price']}\n{p['desc']}")
+        pay_kb = [[InlineKeyboardButton("₿ BTC", callback_data="pay_crypto")], [InlineKeyboardButton("💵 CashApp", callback_data="pay_cash")]]
+        await q.message.reply_text("Choose payment:", reply_markup=InlineKeyboardMarkup(pay_kb))
+    elif d == "pay_crypto":
+        await q.message.reply_text(f"₿ Send BTC:\n`{BTC_WALLET}`", parse_mode="Markdown")
+    elif d == "pay_cash":
+        await q.message.reply_text(f"💵 CashApp:\n`{CASHAPP_TAG}`", parse_mode="Markdown")
 
 async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
-        return await update.message.reply_text(f"Not admin. Your ID is {update.effective_user.id}")
+        return await update.message.reply_text(f"Not admin. Your ID: {update.effective_user.id}")
     try:
-        raw = update.message.text
-        content = raw.split(" ", 1)[1]
-        parts = [x.strip() for x in content.split("|")]
-        name = parts[0]
-        price = parts[1].replace("$","").strip()
-        desc = parts[2]
-        products = load_json(PRODUCTS_FILE, [])
+        raw = update.message.text.split(" ", 1)[1]
+        parts = [x.strip() for x in raw.split("|")]
+        if len(parts) == 4:
+            cat_key, name, price, desc = parts
+        else:
+            cat_key = "shop"
+            name, price, desc = parts
+        cat_key = cat_key.lower()
+        if cat_key not in FILES:
+            cat_key = "shop"
+        price = price.replace("$", "").strip()
+        products = load_json(FILES[cat_key], [])
         products.append({"name": name, "price": price, "desc": desc})
-        save_json(PRODUCTS_FILE, products)
-        await update.message.reply_text(f"✅ Added: {name} - ${price}")
+        save_json(FILES[cat_key], products)
+        await update.message.reply_text(f"✅ Added to {cat_key}: {name} - ${price}")
     except Exception as e:
-        await update.message.reply_text(f"Error: {e}\nUse: /addproduct Name | Price | Description")
+        await update.message.reply_text(f"Error: {e}\nUse: /addproduct shop | Name | Price | Desc")
 
 async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    products = load_json(PRODUCTS_FILE, [])
-    txt = "\n".join([f"{p['name']} - ${p['price']}" for p in products]) or "No products"
+    txt = ""
+    for k, path in FILES.items():
+        ps = load_json(path, [])
+        txt += f"{k}: {len(ps)} items\n"
     await update.message.reply_text(txt)
 
 def run_bot():
