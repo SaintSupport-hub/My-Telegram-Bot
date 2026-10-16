@@ -17,19 +17,26 @@ model = genai.GenerativeModel("gemini-1.5-flash")
 PRODUCTS_FILE = "products.json"
 
 def load_json(path, default):
-    if not os.path.exists(path): return default
+    if not os.path.exists(path):
+        return default
     try:
-        with open(path, "r") as f: return json.load(f)
-    except: return default
+        with open(path, "r") as f:
+            return json.load(f)
+    except:
+        return default
+
 def save_json(path, data):
-    with open(path, "w") as f: json.dump(f, data, indent=2)
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
 
 app = Flask(__name__)
 @app.route("/")
 def home(): return "SAINTLOCK CC LIVE"
 def run_web():
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-def is_admin(uid): return uid == ADMIN_ID
+
+def is_admin(uid):
+    return uid == ADMIN_ID
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [[InlineKeyboardButton("🛒 Shop CLAPCakes", callback_data="shop")]]
@@ -50,30 +57,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_shop(query, context)
     elif query.data.startswith("prod_"):
         idx = int(query.data.split("_")[1])
-        p = load_json(PRODUCTS_FILE, [])[idx]
-        copy_text = f"ORDER: {p['name']} ${p['price']}"
-        await query.message.reply_text(copy_text)
-        pay_kb = [[InlineKeyboardButton("₿ BTC", callback_data="pay_crypto")],[InlineKeyboardButton("💵 CashApp", callback_data="pay_cash")]]
+        products = load_json(PRODUCTS_FILE, [])
+        p = products[idx]
+        await query.message.reply_text(f"✅ You selected: {p['name']} - ${p['price']}\nDesc: {p['desc']}")
+        pay_kb = [[InlineKeyboardButton("₿ Pay BTC", callback_data="pay_crypto")],[InlineKeyboardButton("💵 CashApp", callback_data="pay_cash")]]
         await query.message.reply_text("Choose payment:", reply_markup=InlineKeyboardMarkup(pay_kb))
     elif query.data == "pay_crypto":
-        await query.message.reply_text(f"₿ Send BTC to:\n`{BTC_WALLET}`", parse_mode="Markdown")
+        await query.message.reply_text(f"₿ Send BTC to:\n`{BTC_WALLET}`\n\nNetwork: Bitcoin", parse_mode="Markdown")
     elif query.data == "pay_cash":
-        await query.message.reply_text(f"💵 Send to:\n`{CASHAPP_TAG}`", parse_mode="Markdown")
+        await query.message.reply_text(f"💵 Send CashApp to:\n`{CASHAPP_TAG}`", parse_mode="Markdown")
 
 async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         return await update.message.reply_text(f"Not admin. Your ID is {update.effective_user.id}")
     try:
         raw = update.message.text
-        # remove command
-        if " " not in raw:
-            raise ValueError("no args")
         content = raw.split(" ", 1)[1]
         parts = [x.strip() for x in content.split("|")]
-        if len(parts)!= 3:
-            raise ValueError(f"got {len(parts)} parts, need 3")
-        name, price, desc = parts
-        price = price.replace("$","").strip()
+        name = parts[0]
+        price = parts[1].replace("$","").strip()
+        desc = parts[2]
         products = load_json(PRODUCTS_FILE, [])
         products.append({"name": name, "price": price, "desc": desc})
         save_json(PRODUCTS_FILE, products)
@@ -83,7 +86,8 @@ async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     products = load_json(PRODUCTS_FILE, [])
-    await update.message.reply_text("\n".join([f"{p['name']} - ${p['price']}" for p in products]) or "No products")
+    txt = "\n".join([f"{p['name']} - ${p['price']}" for p in products]) or "No products"
+    await update.message.reply_text(txt)
 
 def run_bot():
     app_bot = ApplicationBuilder().token(BOT_TOKEN).build()
