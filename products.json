@@ -18,5 +18,10 @@
     "name": "AU SNIFF NO REF",
     "price": "16",
     "desc": "Updated 2026/10/09\n\nData Format: CCNUM - EXP MONTH/YEAR - CVV2 - FULL NAME - ADDRESS - CITY - STATE - ZIP - COUNTRY - PHONE - IP - UA\n\nStocks: 4019 pcs\n\nAuto Refund: \u274cNo"
+  },
+  {
+    "name": "US RARE REF",
+    "price": "31.20",
+    "desc": "Description: Updated 2026/10/13\n\nData Format: CCNUM - EXP MONTH/YEAR - CVV2 - FULL NAME - ADDRESS - CITY - STATE - ZIP - COUNTRY \n\nStocks: 224 pcs\n\nAuto Refund: \u2705Yes"
   }
 ]
