@@ -8,5 +8,10 @@
     "name": "US SNIFF NO REF",
     "price": "15.25",
     "desc": "Updated 2026/10/06\n\nData Format: CCNUM - EXP MONTH/YEAR - CVV2 - FULL NAME - ADDRESS - CITY - STATE - ZIP - COUNTRY - EMAIL\n\nStocks: 431 pcs\n\nAuto Refund: \u274cNo"
+  },
+  {
+    "name": "US RICH SNIFF NO REF",
+    "price": "16",
+    "desc": "Updated 2026/10/09\n\nData Format: CCNUM - EXP MONTH/YEAR - CVV2 - FULL NAME - ADDRESS - CITY - STATE - ZIP - COUNTRY - IP - UA\n\nStocks: 6511 pcs\n\nAuto Refund: \u274cNo"
   }
 ]
