@@ -1,0 +1,17 @@
+[
+  {
+    "id": "shop",
+    "name": "\ud83d\uded2Shop CC",
+    "file": "products.json"
+  },
+  {
+    "id": "shop_tees",
+    "name": "\ud83e\udd4aShop Accounts",
+    "file": "products_tees.json"
+  },
+  {
+    "id": "shop_accessories",
+    "name": "\ud83e\udd47Shop BINs",
+    "file": "products_accessories.json"
+  }
+]
