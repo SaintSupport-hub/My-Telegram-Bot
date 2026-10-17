@@ -7,16 +7,10 @@ import qrcode
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or "0")
 SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "SaintSupport")
-
-GH_TOK_KEY = "GIT" + "HUB_TOKEN"
-GH_REPO_KEY = "GIT" + "HUB_REPO"
-BTC_KEY = "BTC_WALLET"
-CASH_KEY = "CASHAPP_TAG"
-
-GH_TOKEN = os.getenv(GH_TOK_KEY)
-GH_REPO = os.getenv(GH_REPO_KEY, "SaintSupport-hub/My-Telegram-Bot")
-BTC_WALLET = os.getenv(BTC_KEY, "bc1q...")
-CASHAPP_TAG = os.getenv(CASH_KEY, "$Saintlockecon")
+BTC_WALLET = os.getenv("BTC_WALLET", "bc1q...")
+CASHAPP_TAG = os.getenv("CASHAPP_TAG", "$Saintlockecon")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+GITHUB_REPO = os.getenv("GITHUB_REPO", "SaintSupport-hub/My-Telegram-Bot")
 
 CATEGORIES_FILE = "categories.json"
 ORDERS_FILE = "orders.json"
@@ -29,7 +23,7 @@ DEFAULT_CATEGORIES = [
 ]
 
 def gh_headers():
-    return {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+    return {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.【entity-github¦canonical_name=GitHub】.v3+json"}
 
 def load_json(path, default):
     if os.path.exists(path):
@@ -38,26 +32,26 @@ def load_json(path, default):
                 return json.load(f)
         except:
             pass
-    if GH_TOKEN:
+    if GITHUB_TOKEN:
         try:
-            url = f"https://api.github.com/repos/{GH_REPO}/contents/{path}"
+            url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
             r = requests.get(url, headers=gh_headers(), timeout=15)
             if r.status_code == 200:
                 data = json.loads(base64.b64decode(r.json()["content"]).decode())
                 with open(path, "w") as f:
                     json.dump(data, f, indent=2)
                 return data
-        except:
-            pass
+        except Exception as e:
+            print(f"load fail {path}: {e}")
     return default
 
 def save_json(path, data):
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
-    if not GH_TOKEN:
+    if not GITHUB_TOKEN:
         return False
     try:
-        url = f"https://api.github.com/repos/{GH_REPO}/contents/{path}"
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
         r = requests.get(url, headers=gh_headers())
         sha = r.json().get("sha") if r.status_code == 200 else None
         payload = {"message": f"Update {path}", "content": base64.b64encode(json.dumps(data, indent=2).encode()).decode()}
@@ -112,7 +106,11 @@ def run_web():
 def is_admin(uid): return uid == ADMIN_ID
 
 async def post_init(app):
-    await app.bot.set_my_commands([BotCommand("start", "Open Shop Menu")])
+    await app.bot.set_my_commands([
+        BotCommand("start", "Open Shop Menu"),
+        BotCommand("listproducts", "List products in category"),
+        BotCommand("listcategories", "List categories"),
+    ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cats = get_categories()
@@ -131,7 +129,7 @@ async def show_balance(q, uid):
     kb = [[InlineKeyboardButton("Top Up", callback_data="topup_choose")],[InlineKeyboardButton("Back", callback_data="back")]]
     await q.edit_message_text(f"Balance: ${bal:.2f}", reply_markup=InlineKeyboardMarkup(kb))
 
-async def show_category(q, cat_id):
+async def show_category(q, cat_id, is_admin_view=False):
     cat = get_cat_by_id(cat_id)
     if not cat:
         await q.edit_message_text("Category not found", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="back")]]))
@@ -140,9 +138,16 @@ async def show_category(q, cat_id):
     if not products:
         await q.edit_message_text(f"{cat['name']} is empty - /addproduct {cat_id} | Name | Price | Desc", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="back")]]))
         return
-    kb = [[InlineKeyboardButton(f"{p['name']} - ${p['price']}", callback_data=f"view_{cat_id}_{i}")] for i,p in enumerate(products)]
+    kb = []
+    for i, p in enumerate(products):
+        kb.append([InlineKeyboardButton(f"{p['name']} - ${p['price']}", callback_data=f"view_{cat_id}_{i}")])
+        if is_admin_view:
+            kb.append([
+                InlineKeyboardButton(f"✏️ Edit {i}", callback_data=f"admin_edit_{cat_id}_{i}"),
+                InlineKeyboardButton(f"🗑️ Del {i}", callback_data=f"admin_del_{cat_id}_{i}")
+            ])
     kb.append([InlineKeyboardButton("Back", callback_data="back")])
-    await q.edit_message_text(f"{cat['name']}:", reply_markup=InlineKeyboardMarkup(kb))
+    await q.edit_message_text(f"{cat['name']} - {len(products)} items:", reply_markup=InlineKeyboardMarkup(kb))
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -150,10 +155,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     d = q.data
     uid = q.from_user.id
     username = q.from_user.username or "no_username"
+    admin_view = is_admin(uid)
 
     if d.startswith("cat_"):
         cat_id = d.replace("cat_", "")
-        await show_category(q, cat_id)
+        await show_category(q, cat_id, is_admin_view=admin_view)
     elif d == "back":
         cats = get_categories()
         kb = []
@@ -214,7 +220,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             p = products[idx]
             order_id = gen_id()
             orders = load_json(ORDERS_FILE, [])
-            orders.append({"order_id": order_id,"user_id": uid,"username": username,"product": p["name"],"price": p["price"],"status": "pending"})
+            orders.append({"order_id": order_id,"user_id": uid,"username": username,"product": p["name"],"price": p["price"],"status": "pending", "category": cat_id})
             save_json(ORDERS_FILE, orders)
             msg = f"**{p['name']}**\nPrice: ${p['price']}\nDesc: {p['desc']}\n\n--- PAYMENT ---\nOrder ID: `{order_id}`\nAmount: ${p['price']}\n\nBTC: `{BTC_WALLET}`\nCashApp: `{CASHAPP_TAG}`"
             await q.message.reply_text(msg, parse_mode="Markdown")
@@ -225,6 +231,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         except Exception as e:
             await q.message.reply_text(f"Error: {e}")
+    elif d.startswith("admin_del_"):
+        if not is_admin(uid): return
+        try:
+            full = d.replace("admin_del_", "")
+            cat_id, idx = full.rsplit("_", 1)
+            idx = int(idx)
+            cat = get_cat_by_id(cat_id)
+            prods = load_json(cat["file"], [])
+            removed = prods.pop(idx)
+            save_json(cat["file"], prods)
+            await q.edit_message_text(f"Deleted {removed['name']} from {cat['name']}")
+        except Exception as e:
+            await q.edit_message_text(f"Delete failed: {e}")
+    elif d.startswith("admin_edit_"):
+        if not is_admin(uid): return
+        try:
+            full = d.replace("admin_edit_", "")
+            cat_id, idx = full.rsplit("_", 1)
+            cat = get_cat_by_id(cat_id)
+            p = load_json(cat["file"], [])[int(idx)]
+            await q.message.reply_text(f"Editing {cat_id} #{idx}: {p['name']}\n\nSend:\n/editproduct {cat_id} | {idx} | New Name | 25 | New Desc")
+        except Exception as e:
+            await q.message.reply_text(f"Edit failed: {e}")
     elif d.startswith("approve_"):
         if not is_admin(uid): return
         order_id = d.replace("approve_", "")
@@ -272,9 +301,68 @@ async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
         prods = load_json(cat["file"], [])
         prods.append({"name": name, "price": price.replace("$",""), "desc": desc})
         save_json(cat["file"], prods)
-        await update.message.reply_text(f"Saved {name} to {cat['name']} ({cat['file']})")
+        await update.message.reply_text(f"Saved {name} to {cat['name']} ({cat['file']}) - Total {len(prods)}")
     except Exception as e:
         await update.message.reply_text(f"Use: /addproduct category_id | Name | Price | Desc - {e}")
+
+async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try:
+        cat_id = update.message.text.split(" ", 1)[1].strip().lower() if len(update.message.text.split()) > 1 else "shop"
+        cat = get_cat_by_id(cat_id)
+        if not cat:
+            await update.message.reply_text("Category not found")
+            return
+        prods = load_json(cat["file"], [])
+        if not prods:
+            await update.message.reply_text(f"{cat['name']} empty")
+            return
+        txt = f"{cat['name']} ({cat_id}):\n"
+        for i, p in enumerate(prods):
+            txt += f"{i}: {p['name']} - ${p['price']} - {p['desc'][:30]}\n"
+        await update.message.reply_text(txt[:4000])
+    except Exception as e:
+        await update.message.reply_text(f"Use: /listproducts category_id - {e}")
+
+async def delete_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try:
+        raw = update.message.text.split(" ", 1)[1]
+        cat_id, idx = [x.strip() for x in raw.split("|")]
+        idx = int(idx)
+        cat = get_cat_by_id(cat_id.lower())
+        if not cat:
+            await update.message.reply_text("Category not found")
+            return
+        prods = load_json(cat["file"], [])
+        removed = prods.pop(idx)
+        save_json(cat["file"], prods)
+        await update.message.reply_text(f"Deleted #{idx}: {removed['name']} from {cat['name']}. {len(prods)} left.")
+    except Exception as e:
+        await update.message.reply_text(f"Use: /deleteproduct category_id | index - {e}")
+
+async def edit_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try:
+        raw = update.message.text.split(" ", 1)[1]
+        parts = [x.strip() for x in raw.split("|")]
+        if len(parts) != 5:
+            await update.message.reply_text("Use: /editproduct category_id | index | New Name | Price | Desc")
+            return
+        cat_id, idx, name, price, desc = parts[0].lower(), int(parts[1]), parts[2], parts[3], parts[4]
+        cat = get_cat_by_id(cat_id)
+        if not cat:
+            await update.message.reply_text("Category not found")
+            return
+        prods = load_json(cat["file"], [])
+        if idx < 0 or idx >= len(prods):
+            await update.message.reply_text(f"Index {idx} out of range (0-{len(prods)-1})")
+            return
+        prods[idx] = {"name": name, "price": price.replace("$",""), "desc": desc}
+        save_json(cat["file"], prods)
+        await update.message.reply_text(f"Edited #{idx} in {cat['name']} to {name} - ${price}")
+    except Exception as e:
+        await update.message.reply_text(f"Error: {e}\nUse: /editproduct category_id | index | Name | Price | Desc")
 
 async def add_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
@@ -321,7 +409,7 @@ async def remove_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Not found")
             return
         save_json(CATEGORIES_FILE, new_cats)
-        await update.message.reply_text(f"Removed {cat_id}. File products_{cat_id}.json still on GH but not shown.")
+        await update.message.reply_text(f"Removed {cat_id}")
     except Exception as e:
         await update.message.reply_text(f"Use: /removecategory id - {e}")
 
@@ -335,6 +423,9 @@ def run_bot():
     b = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
     b.add_handler(CommandHandler("start", start))
     b.add_handler(CommandHandler("addproduct", add_product))
+    b.add_handler(CommandHandler("listproducts", list_products))
+    b.add_handler(CommandHandler("deleteproduct", delete_product))
+    b.add_handler(CommandHandler("editproduct", edit_product))
     b.add_handler(CommandHandler("addcategory", add_category))
     b.add_handler(CommandHandler("renamecategory", rename_category))
     b.add_handler(CommandHandler("removecategory", remove_category))
