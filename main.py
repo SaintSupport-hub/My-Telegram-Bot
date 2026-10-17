@@ -17,13 +17,13 @@ ORDERS_FILE = "orders.json"
 USERS_FILE = "users.json"
 
 DEFAULT_CATEGORIES = [
-    {"id": "shop", "name": "🛒Shop CC", "file": "products.json"},
-    {"id": "shop_tees", "name": "🥊Shop Accounts", "file": "products_tees.json"},
-    {"id": "shop_accessories", "name": "🥇Shop BINs", "file": "products_accessories.json"}
+    {"id": "shop", "name": "Shop CC", "file": "products.json"},
+    {"id": "shop_tees", "name": "Shop Tees", "file": "products_tees.json"},
+    {"id": "shop_accessories", "name": "Shop Accessories", "file": "products_accessories.json"}
 ]
 
 def gh_headers():
-    return {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.【entity-github¦canonical_name=GitHub】.v3+json"}
+    return {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
 
 def load_json(path, default):
     if os.path.exists(path):
@@ -58,6 +58,7 @@ def save_json(path, data):
         if sha:
             payload["sha"] = sha
         resp = requests.put(url, headers=gh_headers(), json=payload, timeout=15)
+        print(f"Saved {path} -> GH {resp.status_code}")
         return resp.status_code in [200,201]
     except Exception as e:
         print(f"save fail {e}")
@@ -68,8 +69,7 @@ def get_categories():
     for c in cats:
         if "file" not in c:
             c["file"] = f"products_{c['id']}.json" if c['id'] != 'shop' else "products.json"
-    if not os.path.exists(CATEGORIES_FILE):
-        save_json(CATEGORIES_FILE, cats)
+    save_json(CATEGORIES_FILE, cats)
     return cats
 
 def get_cat_by_id(cat_id):
@@ -77,6 +77,14 @@ def get_cat_by_id(cat_id):
         if c["id"] == cat_id:
             return c
     return None
+
+def ensure_all_files_on_github():
+    cats = get_categories()
+    for c in cats:
+        prods = load_json(c["file"], [])
+        save_json(c["file"], prods)
+    save_json(USERS_FILE, load_json(USERS_FILE, {}))
+    save_json(ORDERS_FILE, load_json(ORDERS_FILE, []))
 
 def get_user(uid):
     users = load_json(USERS_FILE, {})
@@ -108,8 +116,9 @@ def is_admin(uid): return uid == ADMIN_ID
 async def post_init(app):
     await app.bot.set_my_commands([
         BotCommand("start", "Open Shop Menu"),
-        BotCommand("listproducts", "List products in category"),
+        BotCommand("listproducts", "List products"),
         BotCommand("listcategories", "List categories"),
+        BotCommand("resave", "Force save all to GitHub")
     ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -143,8 +152,8 @@ async def show_category(q, cat_id, is_admin_view=False):
         kb.append([InlineKeyboardButton(f"{p['name']} - ${p['price']}", callback_data=f"view_{cat_id}_{i}")])
         if is_admin_view:
             kb.append([
-                InlineKeyboardButton(f"✏️ Edit {i}", callback_data=f"admin_edit_{cat_id}_{i}"),
-                InlineKeyboardButton(f"🗑️ Del {i}", callback_data=f"admin_del_{cat_id}_{i}")
+                InlineKeyboardButton(f"Edit {i}", callback_data=f"admin_edit_{cat_id}_{i}"),
+                InlineKeyboardButton(f"Del {i}", callback_data=f"admin_del_{cat_id}_{i}")
             ])
     kb.append([InlineKeyboardButton("Back", callback_data="back")])
     await q.edit_message_text(f"{cat['name']} - {len(products)} items:", reply_markup=InlineKeyboardMarkup(kb))
@@ -213,16 +222,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cat_id = parts[0]
             idx = int(parts[1])
             cat = get_cat_by_id(cat_id)
-            if not cat:
-                await q.message.reply_text("Category not found")
-                return
             products = load_json(cat["file"], [])
             p = products[idx]
             order_id = gen_id()
             orders = load_json(ORDERS_FILE, [])
             orders.append({"order_id": order_id,"user_id": uid,"username": username,"product": p["name"],"price": p["price"],"status": "pending", "category": cat_id})
             save_json(ORDERS_FILE, orders)
-            msg = f"**{p['name']}**\nPrice: ${p['price']}\nDesc: {p['desc']}\n\n--- PAYMENT ---\nOrder ID: `{order_id}`\nAmount: ${p['price']}\n\nBTC: `{BTC_WALLET}`\nCashApp: `{CASHAPP_TAG}`"
+            msg = f"**{p['name']}**\nPrice: ${p['price']}\nDesc: {p['desc']}\n\n--- PAYMENT ---\nOrder ID: `{order_id}`\nBTC: `{BTC_WALLET}`\nCashApp: `{CASHAPP_TAG}`"
             await q.message.reply_text(msg, parse_mode="Markdown")
             admin_kb = InlineKeyboardMarkup([[InlineKeyboardButton(f"Approve {order_id}", callback_data=f"approve_{order_id}"), InlineKeyboardButton(f"Decline {order_id}", callback_data=f"decline_{order_id}")]])
             try:
@@ -251,7 +257,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cat_id, idx = full.rsplit("_", 1)
             cat = get_cat_by_id(cat_id)
             p = load_json(cat["file"], [])[int(idx)]
-            await q.message.reply_text(f"Editing {cat_id} #{idx}: {p['name']}\n\nSend:\n/editproduct {cat_id} | {idx} | New Name | 25 | New Desc")
+            await q.message.reply_text(f"Editing {cat_id} #{idx}: {p['name']}\nSend:\n/editproduct {cat_id} | {idx} | New Name | 25 | New Desc")
         except Exception as e:
             await q.message.reply_text(f"Edit failed: {e}")
     elif d.startswith("approve_"):
@@ -301,7 +307,7 @@ async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
         prods = load_json(cat["file"], [])
         prods.append({"name": name, "price": price.replace("$",""), "desc": desc})
         save_json(cat["file"], prods)
-        await update.message.reply_text(f"Saved {name} to {cat['name']} ({cat['file']}) - Total {len(prods)}")
+        await update.message.reply_text(f"Saved {name} to {cat['name']} - Total {len(prods)}")
     except Exception as e:
         await update.message.reply_text(f"Use: /addproduct category_id | Name | Price | Desc - {e}")
 
@@ -319,7 +325,7 @@ async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         txt = f"{cat['name']} ({cat_id}):\n"
         for i, p in enumerate(prods):
-            txt += f"{i}: {p['name']} - ${p['price']} - {p['desc'][:30]}\n"
+            txt += f"{i}: {p['name']} - ${p['price']}\n"
         await update.message.reply_text(txt[:4000])
     except Exception as e:
         await update.message.reply_text(f"Use: /listproducts category_id - {e}")
@@ -331,13 +337,10 @@ async def delete_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cat_id, idx = [x.strip() for x in raw.split("|")]
         idx = int(idx)
         cat = get_cat_by_id(cat_id.lower())
-        if not cat:
-            await update.message.reply_text("Category not found")
-            return
         prods = load_json(cat["file"], [])
         removed = prods.pop(idx)
         save_json(cat["file"], prods)
-        await update.message.reply_text(f"Deleted #{idx}: {removed['name']} from {cat['name']}. {len(prods)} left.")
+        await update.message.reply_text(f"Deleted #{idx}: {removed['name']}. {len(prods)} left.")
     except Exception as e:
         await update.message.reply_text(f"Use: /deleteproduct category_id | index - {e}")
 
@@ -351,18 +354,12 @@ async def edit_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         cat_id, idx, name, price, desc = parts[0].lower(), int(parts[1]), parts[2], parts[3], parts[4]
         cat = get_cat_by_id(cat_id)
-        if not cat:
-            await update.message.reply_text("Category not found")
-            return
         prods = load_json(cat["file"], [])
-        if idx < 0 or idx >= len(prods):
-            await update.message.reply_text(f"Index {idx} out of range (0-{len(prods)-1})")
-            return
         prods[idx] = {"name": name, "price": price.replace("$",""), "desc": desc}
         save_json(cat["file"], prods)
-        await update.message.reply_text(f"Edited #{idx} in {cat['name']} to {name} - ${price}")
+        await update.message.reply_text(f"Edited #{idx} to {name} - ${price}")
     except Exception as e:
-        await update.message.reply_text(f"Error: {e}\nUse: /editproduct category_id | index | Name | Price | Desc")
+        await update.message.reply_text(f"Error: {e}")
 
 async def add_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
@@ -372,16 +369,16 @@ async def add_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cat_id = cat_id.lower().replace(" ", "_")
         cats = get_categories()
         if any(c["id"] == cat_id for c in cats):
-            await update.message.reply_text(f"Category {cat_id} already exists. Use /renamecategory")
+            await update.message.reply_text(f"Exists, use /renamecategory")
             return
-        file_name = f"products_{cat_id}.json" if cat_id != "shop" else "products.json"
+        file_name = f"products_{cat_id}.json"
         new_cat = {"id": cat_id, "name": name, "file": file_name}
         cats.append(new_cat)
         save_json(CATEGORIES_FILE, cats)
         save_json(file_name, [])
-        await update.message.reply_text(f"Added category {name} with id {cat_id}")
+        await update.message.reply_text(f"Added {name} id {cat_id}")
     except Exception as e:
-        await update.message.reply_text(f"Use: /addcategory id | Display Name\nError: {e}")
+        await update.message.reply_text(f"Error: {e}")
 
 async def rename_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
@@ -393,11 +390,10 @@ async def rename_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if c["id"] == cat_id.lower():
                 c["name"] = new_name
                 save_json(CATEGORIES_FILE, cats)
-                await update.message.reply_text(f"Renamed {cat_id} to {new_name}")
+                await update.message.reply_text(f"Renamed to {new_name}")
                 return
-        await update.message.reply_text(f"Category {cat_id} not found")
     except Exception as e:
-        await update.message.reply_text(f"Use: /renamecategory id | New Name - {e}")
+        await update.message.reply_text(f"Error: {e}")
 
 async def remove_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
@@ -405,19 +401,28 @@ async def remove_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cat_id = update.message.text.split(" ", 1)[1].strip().lower()
         cats = get_categories()
         new_cats = [c for c in cats if c["id"] != cat_id]
-        if len(new_cats) == len(cats):
-            await update.message.reply_text("Not found")
-            return
         save_json(CATEGORIES_FILE, new_cats)
         await update.message.reply_text(f"Removed {cat_id}")
     except Exception as e:
-        await update.message.reply_text(f"Use: /removecategory id - {e}")
+        await update.message.reply_text(f"Error: {e}")
 
 async def list_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
     cats = get_categories()
-    txt = "Categories:\n" + "\n".join([f"{c['id']} -> {c['name']} ({c['file']})" for c in cats])
+    txt = "\n".join([f"{c['id']} -> {c['name']}" for c in cats])
     await update.message.reply_text(txt)
+
+async def resave_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    cats = get_categories()
+    msg = ""
+    for c in cats:
+        prods = load_json(c["file"], [])
+        ok = save_json(c["file"], prods)
+        msg += f"{c['file']}: {len(prods)} -> GH {ok}\n"
+    ok = save_json(CATEGORIES_FILE, cats)
+    msg += f"{CATEGORIES_FILE} -> {ok}"
+    await update.message.reply_text(msg)
 
 def run_bot():
     b = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
@@ -430,10 +435,15 @@ def run_bot():
     b.add_handler(CommandHandler("renamecategory", rename_category))
     b.add_handler(CommandHandler("removecategory", remove_category))
     b.add_handler(CommandHandler("listcategories", list_categories))
+    b.add_handler(CommandHandler("resave", resave_all))
     b.add_handler(CallbackQueryHandler(button_handler))
     b.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, nudge_start))
     b.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     threading.Thread(target=run_web, daemon=True).start()
+    try:
+        ensure_all_files_on_github()
+    except:
+        pass
     run_bot()
