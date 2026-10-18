@@ -48,6 +48,6 @@
     "product": "TOPUP $50",
     "price": "50",
     "method": "cash",
-    "status": "pending"
+    "status": "approved"
   }
 ]
