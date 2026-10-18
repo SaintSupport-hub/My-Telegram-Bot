@@ -15,6 +15,7 @@ GITHUB_REPO = os.getenv("GITHUB_REPO", "SaintSupport-hub/My-Telegram-Bot")
 CATEGORIES_FILE = "categories.json"
 ORDERS_FILE = "orders.json"
 USERS_FILE = "users.json"
+OLD_ORDERS_FILE = "topup_orders.json"
 
 DEFAULT_CATEGORIES = [
     {"id": "shop", "name": "🛒Shop CC", "file": "products.json"},
@@ -23,61 +24,65 @@ DEFAULT_CATEGORIES = [
 ]
 
 def gh_headers():
-    return {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+    return {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.【entity-github¦canonical_name=GitHub】.v3+json"}
 
 def load_json(path, default):
+    local_data = None
     if os.path.exists(path):
         try:
             with open(path, "r") as f:
-                return json.load(f)
+                local_data = json.load(f)
         except:
             pass
+    gh_data = None
     if GITHUB_TOKEN:
         try:
             url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
             r = requests.get(url, headers=gh_headers(), timeout=15)
             if r.status_code == 200:
-                data = json.loads(base64.b64decode(r.json()["content"]).decode())
-                with open(path, "w") as f:
-                    json.dump(data, f, indent=2)
-                return data
-        except Exception as e:
-            print(f"load fail {path}: {e}")
+                gh_data = json.loads(base64.b64decode(r.json()["content"]).decode())
+        except:
+            pass
+    # MERGE LOGIC FOR USERS - keep highest balance
+    if path == USERS_FILE and local_data and gh_data:
+        merged = gh_data.copy()
+        for uid, info in local_data.items():
+            if uid not in merged:
+                merged[uid] = info
+            else:
+                # keep highest balance
+                try:
+                    if float(info.get("balance",0)) > float(merged[uid].get("balance",0)):
+                        merged[uid] = info
+                except:
+                    merged[uid] = info
+        with open(path, "w") as f:
+            json.dump(merged, f, indent=2)
+        return merged
+    if local_data is not None:
+        return local_data
+    if gh_data is not None:
+        with open(path, "w") as f:
+            json.dump(gh_data, f, indent=2)
+        return gh_data
     return default
 
-def save_json(path, data, retry=3):
+def save_json(path, data):
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
     if not GITHUB_TOKEN:
         return True
-    for attempt in range(retry):
-        try:
-            url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
-            r = requests.get(url, headers=gh_headers())
-            sha = r.json().get("sha") if r.status_code == 200 else None
-            if r.status_code == 200 and path.startswith("products"):
-                try:
-                    gh_data = json.loads(base64.b64decode(r.json()["content"]).decode())
-                    if isinstance(gh_data, list) and isinstance(data, list) and len(data) < len(gh_data):
-                        gh_names = {x.get('name') for x in gh_data}
-                        for item in data:
-                            if item.get('name') not in gh_names:
-                                gh_data.append(item)
-                        data = gh_data
-                        with open(path, "w") as f:
-                            json.dump(data, f, indent=2)
-                except:
-                    pass
-            payload = {"message": f"Update {path}", "content": base64.b64encode(json.dumps(data, indent=2).encode()).decode()}
-            if sha:
-                payload["sha"] = sha
-            resp = requests.put(url, headers=gh_headers(), json=payload, timeout=15)
-            if resp.status_code in [200,201]:
-                return True
-            time.sleep(1)
-        except:
-            time.sleep(1)
-    return False
+    try:
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+        r = requests.get(url, headers=gh_headers())
+        sha = r.json().get("sha") if r.status_code == 200 else None
+        payload = {"message": f"Update {path}", "content": base64.b64encode(json.dumps(data, indent=2).encode()).decode()}
+        if sha:
+            payload["sha"] = sha
+        resp = requests.put(url, headers=gh_headers(), json=payload, timeout=15)
+        return resp.status_code in [200,201]
+    except:
+        return False
 
 def get_categories():
     cats = load_json(CATEGORIES_FILE, DEFAULT_CATEGORIES)
@@ -92,14 +97,6 @@ def get_cat_by_id(cat_id):
         if c["id"] == cat_id:
             return c
     return None
-
-def ensure_all_files_on_github():
-    cats = get_categories()
-    for c in cats:
-        prods = load_json(c["file"], [])
-        save_json(c["file"], prods)
-    save_json(USERS_FILE, load_json(USERS_FILE, {}))
-    save_json(ORDERS_FILE, load_json(ORDERS_FILE, []))
 
 def get_user(uid):
     users = load_json(USERS_FILE, {})
@@ -116,6 +113,7 @@ def add_balance(uid, amt):
         users[s] = {"balance": 0.0}
     users[s]["balance"] = float(users[s].get("balance", 0)) + float(amt)
     save_json(USERS_FILE, users)
+    return users[s]["balance"]
 
 def gen_id():
     return "ORD-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
@@ -132,7 +130,7 @@ async def post_init(app):
     await app.bot.set_my_commands([
         BotCommand("start", "Open Shop Menu"),
         BotCommand("listproducts", "List products"),
-        BotCommand("listcategories", "List categories"),
+        BotCommand("addbalance", "Add balance manually"),
         BotCommand("resave", "Force save all")
     ])
 
@@ -144,9 +142,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb.append([InlineKeyboardButton("Balance / Top Up", callback_data="balance")])
     kb.append([InlineKeyboardButton("SUPPORT", callback_data="support")])
     await update.message.reply_text("Welcome to SAINTLOCK CC", reply_markup=InlineKeyboardMarkup(kb))
-
-async def nudge_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Welcome! Click /start to open the shop menu.")
 
 async def show_balance(q, uid):
     bal = get_user(uid).get("balance", 0)
@@ -160,7 +155,7 @@ async def show_category(q, cat_id, is_admin_view=False):
         return
     products = load_json(cat["file"], [])
     if not products:
-        await q.edit_message_text(f"{cat['name']} is empty - /addproduct {cat_id} | Name | Price | Desc", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="back")]]))
+        await q.edit_message_text(f"{cat['name']} is empty", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="back")]]))
         return
     kb = []
     for i, p in enumerate(products):
@@ -178,13 +173,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = q.from_user.username or "no_username"
     admin_view = is_admin(uid)
     if d.startswith("cat_"):
-        cat_id = d.replace("cat_", "")
-        await show_category(q, cat_id, is_admin_view=admin_view)
+        await show_category(q, d.replace("cat_", ""), is_admin_view=admin_view)
     elif d == "back":
         cats = get_categories()
-        kb = []
-        for c in cats:
-            kb.append([InlineKeyboardButton(c["name"], callback_data=f"cat_{c['id']}")])
+        kb = [[InlineKeyboardButton(c["name"], callback_data=f"cat_{c['id']}")] for c in cats]
         kb.append([InlineKeyboardButton("Balance / Top Up", callback_data="balance")])
         kb.append([InlineKeyboardButton("SUPPORT", callback_data="support")])
         await q.edit_message_text("Welcome to SAINTLOCK CC", reply_markup=InlineKeyboardMarkup(kb))
@@ -204,6 +196,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         method = d.replace("topup_method_", "")
         amount = context.user_data.get("topup_amount", "20")
         order_id = gen_id()
+        # check both old and new order files
         orders = load_json(ORDERS_FILE, [])
         orders.append({"order_id": order_id,"user_id": uid,"username": username,"product": f"TOPUP ${amount}","price": amount,"method": method,"status": "pending"})
         save_json(ORDERS_FILE, orders)
@@ -224,61 +217,60 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
     elif d.startswith("view_"):
-        try:
-            parts = d.replace("view_", "").rsplit("_", 1)
-            cat_id = parts[0]
-            idx = int(parts[1])
-            cat = get_cat_by_id(cat_id)
-            products = load_json(cat["file"], [])
-            p = products[idx]
-            order_id = gen_id()
-            orders = load_json(ORDERS_FILE, [])
-            orders.append({"order_id": order_id,"user_id": uid,"username": username,"product": p["name"],"price": p["price"],"status": "pending", "category": cat_id})
-            save_json(ORDERS_FILE, orders)
-            msg = f"**{p['name']}**\nPrice: ${p['price']}\nDesc: {p['desc']}\n\n--- PAYMENT ---\nOrder ID: `{order_id}`\nBTC: `{BTC_WALLET}`\nCashApp: `{CASHAPP_TAG}`"
-            await q.message.reply_text(msg, parse_mode="Markdown")
-            admin_kb = InlineKeyboardMarkup([[InlineKeyboardButton(f"Approve {order_id}", callback_data=f"approve_{order_id}"), InlineKeyboardButton(f"Decline {order_id}", callback_data=f"decline_{order_id}")]])
-            try:
-                await context.bot.send_message(chat_id=ADMIN_ID, text=f"NEW SALE\nUser: @{username}\nOrder: {order_id}\nProduct: {p['name']}\nPrice: ${p['price']}", reply_markup=admin_kb)
-            except:
-                pass
-        except Exception as e:
-            await q.message.reply_text(f"Error: {e}")
+        parts = d.replace("view_", "").rsplit("_", 1)
+        cat_id = parts[0]
+        idx = int(parts[1])
+        cat = get_cat_by_id(cat_id)
+        products = load_json(cat["file"], [])
+        p = products[idx]
+        order_id = gen_id()
+        orders = load_json(ORDERS_FILE, [])
+        orders.append({"order_id": order_id,"user_id": uid,"username": username,"product": p["name"],"price": p["price"],"status": "pending", "category": cat_id})
+        save_json(ORDERS_FILE, orders)
+        msg = f"**{p['name']}**\nPrice: ${p['price']}\nDesc: {p['desc']}\n\nOrder ID: `{order_id}`"
+        await q.message.reply_text(msg, parse_mode="Markdown")
     elif d.startswith("admin_del_"):
         if not is_admin(uid): return
         full = d.replace("admin_del_", "")
         cat_id, idx = full.rsplit("_", 1)
-        idx = int(idx)
         cat = get_cat_by_id(cat_id)
         prods = load_json(cat["file"], [])
-        removed = prods.pop(idx)
+        removed = prods.pop(int(idx))
         save_json(cat["file"], prods)
-        await q.edit_message_text(f"Deleted {removed['name']} from {cat['name']}")
+        await q.edit_message_text(f"Deleted {removed['name']}")
     elif d.startswith("admin_edit_"):
         if not is_admin(uid): return
         full = d.replace("admin_edit_", "")
         cat_id, idx = full.rsplit("_", 1)
-        cat = get_cat_by_id(cat_id)
-        p = load_json(cat["file"], [])[int(idx)]
-        await q.message.reply_text(f"Editing {cat_id} #{idx}: {p['name']}\n/editproduct {cat_id} | {idx} | New Name | 25 | Desc")
+        p = load_json(get_cat_by_id(cat_id)["file"], [])[int(idx)]
+        await q.message.reply_text(f"/editproduct {cat_id} | {idx} | {p['name']} | {p['price']} | {p['desc']}")
     elif d.startswith("approve_"):
         if not is_admin(uid): return
         order_id = d.replace("approve_", "")
         orders = load_json(ORDERS_FILE, [])
+        # also check old file
+        if not any(o["order_id"] == order_id for o in orders):
+            old_orders = load_json(OLD_ORDERS_FILE, [])
+            for oo in old_orders:
+                if oo["order_id"] == order_id:
+                    orders.append(oo)
         for o in orders:
             if o["order_id"] == order_id:
                 o["status"] = "approved"
                 save_json(ORDERS_FILE, orders)
                 new_bal = 0
-                if "TOPUP" in o.get("product",""):
-                    add_balance(o["user_id"], float(o["price"]))
-                    new_bal = get_user(o["user_id"]).get("balance", 0)
-                await q.edit_message_text(f"Approved {order_id} - New bal for user: ${new_bal:.2f}")
+                if "TOPUP" in o.get("product","", "") or "TOPUP" in str(o.get("order_id","")):
+                    # price can be in amount or price field
+                    amt = o.get("price") or o.get("amount") or 0
+                    new_bal = add_balance(o["user_id"], float(amt))
+                else:
+                    # also support TOPUP orders that have amount field
+                    amt = o.get("amount") or o.get("price") or 0
+                    if float(amt) > 0 and "TOPUP" in str(o):
+                        new_bal = add_balance(o["user_id"], float(amt))
+                await q.edit_message_text(f"Approved {order_id} - New bal: ${new_bal:.2f}")
                 try:
-                    if "TOPUP" in o.get("product",""):
-                        await context.bot.send_message(chat_id=o["user_id"], text=f"Approved Top Up {order_id}\n${o['price']} added!\nNew Balance: ${new_bal:.2f}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Check Balance", callback_data="balance")]]))
-                    else:
-                        await context.bot.send_message(chat_id=o["user_id"], text=f"Order {order_id} APPROVED! Product: {o.get('product')}")
+                    await context.bot.send_message(chat_id=o["user_id"], text=f"Approved! ${o.get('price') or o.get('amount')} added!\nNew Balance: ${new_bal:.2f}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Check Balance", callback_data="balance")]]))
                 except:
                     pass
                 break
@@ -291,97 +283,50 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 o["status"] = "declined"
                 save_json(ORDERS_FILE, orders)
                 await q.edit_message_text(f"Declined {order_id}")
-                try:
-                    await context.bot.send_message(chat_id=o["user_id"], text=f"Order {order_id} DECLINED.")
-                except:
-                    pass
                 break
 
 async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
+    raw = update.message.text.split(" ", 1)[1]
+    parts = [x.strip() for x in raw.split("|")]
+    if len(parts) == 4:
+        cat_id, name, price, desc = parts[0].lower(), parts[1], parts[2], parts[3]
+    else:
+        cat_id, name, price, desc = "shop", parts[0], parts[1], parts[2]
+    cat = get_cat_by_id(cat_id)
+    prods = load_json(cat["file"], [])
+    prods.append({"name": name, "price": price.replace("$",""), "desc": desc})
+    save_json(cat["file"], prods)
+    await update.message.reply_text(f"Saved {name} - Total {len(prods)}")
+
+async def add_balance_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
     try:
         raw = update.message.text.split(" ", 1)[1]
-        parts = [x.strip() for x in raw.split("|")]
-        if len(parts) == 4:
-            cat_id, name, price, desc = parts[0].lower(), parts[1], parts[2], parts[3]
-        else:
-            cat_id, name, price, desc = "shop", parts[0], parts[1], parts[2]
-        cat = get_cat_by_id(cat_id)
-        prods = load_json(cat["file"], [])
-        prods.append({"name": name, "price": price.replace("$",""), "desc": desc})
-        ok = save_json(cat["file"], prods)
-        await update.message.reply_text(f"Saved {name} to {cat['name']} - Total {len(prods)} - GH {ok}")
+        uid_str, amt = [x.strip() for x in raw.split("|")]
+        new_bal = add_balance(int(uid_str) if uid_str.isdigit() else uid_str, float(amt))
+        await update.message.reply_text(f"Added ${amt} to {uid_str} - New bal ${new_bal:.2f}")
     except Exception as e:
-        await update.message.reply_text(f"Use: /addproduct category_id | Name | Price | Desc - {e}")
+        await update.message.reply_text(f"Use: /addbalance user_id | 50 - {e}")
 
 async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
     cat_id = update.message.text.split(" ", 1)[1].strip().lower() if len(update.message.text.split()) > 1 else "shop"
     cat = get_cat_by_id(cat_id)
     prods = load_json(cat["file"], [])
-    txt = f"{cat['name']} {len(prods)} items:\n" + "\n".join([f"{i}: {p['name']} - ${p['price']}" for i, p in enumerate(prods)])
-    await update.message.reply_text(txt[:4000])
+    txt = "\n".join([f"{i}: {p['name']} - ${p['price']}" for i, p in enumerate(prods)])
+    await update.message.reply_text(f"{cat['name']} {len(prods)} items:\n{txt[:3500]}")
 
-async def delete_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
-    raw = update.message.text.split(" ", 1)[1]
-    cat_id, idx = [x.strip() for x in raw.split("|")]
-    idx = int(idx)
-    cat = get_cat_by_id(cat_id.lower())
-    prods = load_json(cat["file"], [])
-    removed = prods.pop(idx)
-    save_json(cat["file"], prods)
-    await update.message.reply_text(f"Deleted {removed['name']}. {len(prods)} left.")
-
-async def edit_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
-    raw = update.message.text.split(" ", 1)[1]
-    parts = [x.strip() for x in raw.split("|")]
-    cat_id, idx, name, price, desc = parts[0].lower(), int(parts[1]), parts[2], parts[3], parts[4]
-    cat = get_cat_by_id(cat_id)
-    prods = load_json(cat["file"], [])
-    prods[idx] = {"name": name, "price": price.replace("$",""), "desc": desc}
-    save_json(cat["file"], prods)
-    await update.message.reply_text(f"Edited #{idx} to {name}")
-
-async def add_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
-    raw = update.message.text.split(" ", 1)[1]
-    cat_id, name = [x.strip() for x in raw.split("|", 1)]
-    cat_id = cat_id.lower().replace(" ", "_")
-    cats = get_categories()
-    file_name = f"products_{cat_id}.json"
-    new_cat = {"id": cat_id, "name": name, "file": file_name}
-    cats.append(new_cat)
-    save_json(CATEGORIES_FILE, cats)
-    save_json(file_name, [])
-    await update.message.reply_text(f"Added {name}")
-
-async def rename_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
-    raw = update.message.text.split(" ", 1)[1]
-    cat_id, new_name = [x.strip() for x in raw.split("|", 1)]
-    cats = get_categories()
-    for c in cats:
-        if c["id"] == cat_id.lower():
-            c["name"] = new_name
-            save_json(CATEGORIES_FILE, cats)
-            await update.message.reply_text(f"Renamed to {new_name}")
-            return
-
-async def remove_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
-    cat_id = update.message.text.split(" ", 1)[1].strip().lower()
-    cats = get_categories()
-    new_cats = [c for c in cats if c["id"] != cat_id]
-    save_json(CATEGORIES_FILE, new_cats)
-    await update.message.reply_text(f"Removed {cat_id}")
-
-async def list_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
-    cats = get_categories()
-    txt = "\n".join([f"{c['id']} -> {c['name']} ({len(load_json(c['file'], []))} items)" for c in cats])
-    await update.message.reply_text(txt)
+def run_bot():
+    b = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
+    b.add_handler(CommandHandler("start", start))
+    b.add_handler(CommandHandler("addproduct", add_product))
+    b.add_handler(CommandHandler("listproducts", list_products))
+    b.add_handler(CommandHandler("addbalance", add_balance_cmd))
+    b.add_handler(CommandHandler("resave", lambda u,c: resave_all(u,c)))
+    b.add_handler(CallbackQueryHandler(button_handler))
+    b.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u,c: u.message.reply_text("Click /start")))
+    b.run_polling(drop_pending_updates=True)
 
 async def resave_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
@@ -389,30 +334,14 @@ async def resave_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = ""
     for c in cats:
         prods = load_json(c["file"], [])
-        ok = save_json(c["file"], prods)
-        msg += f"{c['file']}: {len(prods)} -> GH {ok}\n"
-    await update.message.reply_text(msg)
-
-def run_bot():
-    b = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
-    b.add_handler(CommandHandler("start", start))
-    b.add_handler(CommandHandler("addproduct", add_product))
-    b.add_handler(CommandHandler("listproducts", list_products))
-    b.add_handler(CommandHandler("deleteproduct", delete_product))
-    b.add_handler(CommandHandler("editproduct", edit_product))
-    b.add_handler(CommandHandler("addcategory", add_category))
-    b.add_handler(CommandHandler("renamecategory", rename_category))
-    b.add_handler(CommandHandler("removecategory", remove_category))
-    b.add_handler(CommandHandler("listcategories", list_categories))
-    b.add_handler(CommandHandler("resave", resave_all))
-    b.add_handler(CallbackQueryHandler(button_handler))
-    b.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, nudge_start))
-    b.run_polling(drop_pending_updates=True)
+        save_json(c["file"], prods)
+        msg += f"{c['file']}: {len(prods)}\n"
+    users = load_json(USERS_FILE, {})
+    msg += f"users: {len(users)} users\n"
+    for uid, info in users.items():
+        msg += f"{uid}: ${info.get('balance',0)}\n"
+    await update.message.reply_text(msg[:4000])
 
 if __name__ == "__main__":
     threading.Thread(target=run_web, daemon=True).start()
-    try:
-        ensure_all_files_on_github()
-    except:
-        pass
     run_bot()
