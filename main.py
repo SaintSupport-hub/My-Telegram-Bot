@@ -11,7 +11,7 @@ BTC_WALLET = os.getenv("BTC_WALLET", "bc1q...")
 CASHAPP_TAG = os.getenv("CASHAPP_TAG", "$Saintlockecon")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "SaintSupport-hub/My-Telegram-Bot")
-RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "")  # Render gives you this automatically
+RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "")
 
 CATEGORIES_FILE = "categories.json"
 ORDERS_FILE = "orders.json"
@@ -24,7 +24,7 @@ DEFAULT_CATEGORIES = [
 ]
 
 def gh_headers():
-    return {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.【entity-github¦canonical_name=GitHub】.v3+json"}
+    return {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd. github.v3+json"}
 
 def load_json(path, default):
     local = None
@@ -68,17 +68,6 @@ def save_json(path, data):
         url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
         r = requests.get(url, headers=gh_headers())
         sha = r.json().get("sha") if r.status_code == 200 else None
-        if r.status_code == 200 and path.startswith("products"):
-            try:
-                gh_data = json.loads(base64.b64decode(r.json()["content"]).decode())
-                if isinstance(gh_data, list) and isinstance(data, list) and len(data) < len(gh_data):
-                    names = {x.get('name') for x in gh_data}
-                    for it in data:
-                        if it.get('name') not in names:
-                            gh_data.append(it)
-                    data = gh_data
-            except:
-                pass
         payload = {"message": f"Update {path}", "content": base64.b64encode(json.dumps(data, indent=2).encode()).decode()}
         if sha:
             payload["sha"] = sha
@@ -132,18 +121,25 @@ def deduct_balance(uid, amt):
 def gen_id():
     return "ORD-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-# --- KEEP ALIVE FOR RENDER FREE PLAN ---
 def keep_alive_loop():
     while True:
-        time.sleep(600)  # 10 min
+        time.sleep(600)
         try:
-            # ping itself and also ping Render URL to keep awake
             if RENDER_URL:
                 requests.get(RENDER_URL, timeout=10)
-                print(f"Keep alive ping {RENDER_URL}")
             requests.get("http://localhost:10000/", timeout=5)
-        except Exception as e:
-            print(f"Keep alive fail {e}")
+        except:
+            pass
+
+def get_order_complete_message(order_id, username, user_id, product_name):
+    return f"""✅ PURCHASE SUCCESSFUL!
+
+Order #: {order_id}
+Username: @{username}
+User ID: {user_id}
+Product: {product_name}
+
+Please contact @Saintlocksupport with your order # and screenshot of the receipt to receive your order. Happy Shopping!!!"""
 
 app = Flask(__name__)
 @app.route("/")
@@ -157,7 +153,7 @@ async def post_init(app):
     await app.bot.set_my_commands([
         BotCommand("start", "Open Shop Menu"),
         BotCommand("listproducts", "List products"),
-        BotCommand("addbalance", "Add balance manually")
+        BotCommand("addbalance", "Add balance")
     ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -237,8 +233,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=ADMIN_ID, text=f"NEW TOP UP\nUser: @{username} ({uid})\nOrder: {order_id}\nAmount: ${amount}\nMethod: {method}", reply_markup=admin_kb)
         except:
             pass
-
-    # PRODUCT CLICK - SHOW DESCRIPTION + 3 PAYMENT OPTIONS
     elif d.startswith("view_"):
         parts = d.replace("view_", "").rsplit("_", 1)
         cat_id = parts[0]
@@ -251,7 +245,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         orders = load_json(ORDERS_FILE, [])
         orders.append({"order_id": order_id,"user_id": uid,"username": username,"product": p["name"],"price": p["price"],"status": "pending", "category": cat_id, "product_idx": idx})
         save_json(ORDERS_FILE, orders)
-
         text = f"*{p['name']}*\n\nPrice: ${p['price']}\n\nDesc: {p['desc']}\n\nYour Balance: ${bal:.2f}\n\nOrder ID: `{order_id}`\n\nChoose payment method:"
         kb = [
             [InlineKeyboardButton(f"Pay with Balance (${bal:.2f})", callback_data=f"paybal_{order_id}")],
@@ -260,7 +253,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("Back", callback_data=f"cat_{cat_id}")]
         ]
         await q.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
-
     elif d.startswith("paybal_"):
         order_id = d.replace("paybal_", "")
         orders = load_json(ORDERS_FILE, [])
@@ -269,37 +261,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 price = float(o["price"])
                 bal = get_user(uid).get("balance", 0)
                 if bal < price:
-                    await q.message.reply_text(f"Not enough balance. You have ${bal:.2f}, need ${price:.2f}. Top up first.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Top Up", callback_data="balance")]]))
+                    await q.message.reply_text(f"Not enough balance. You have ${bal:.2f}, need ${price:.2f}.")
                     return
                 new_bal = deduct_balance(uid, price)
                 o["status"] = "approved_balance"
                 save_json(ORDERS_FILE, orders)
-                # deliver product
                 cat = get_cat_by_id(o.get("category","shop"))
-                prod = load_json(cat["file"], [])[o.get("product_idx",0)] if o.get("product_idx") is not None else {"name": o["product"], "desc": "Delivered"}
-                await q.message.reply_text(f"PAID WITH BALANCE!\n\n{prod['name']} - ${price}\n\n{prod['desc']}\n\nNew Balance: ${new_bal:.2f}\nOrder {order_id} DELIVERED!")
+                prod = load_json(cat["file"], [])[o.get("product_idx",0)] if o.get("product_idx") is not None else {"name": o["product"]}
+                complete_msg = get_order_complete_message(order_id, username, uid, prod['name'])
+                await q.message.reply_text(complete_msg)
                 try:
-                    await context.bot.send_message(chat_id=ADMIN_ID, text=f"BALANCE PURCHASE\nUser: @{username} ({uid})\nProduct: {prod['name']}\nPrice: ${price}\nOrder: {order_id}\nNew Bal: ${new_bal:.2f}")
+                    await context.bot.send_message(chat_id=ADMIN_ID, text=f"BALANCE PURCHASE\n{complete_msg}\nNew Bal: ${new_bal:.2f}")
                 except:
                     pass
                 break
-
     elif d.startswith("paybtc_"):
         order_id = d.replace("paybtc_", "")
-        orders = load_json(ORDERS_FILE, [])
-        for o in orders:
-            if o["order_id"] == order_id:
-                await q.message.reply_text(f"Order {order_id}\nAmount: ${o['price']}\n\nBTC Wallet:\n`{BTC_WALLET}`\n\nSend exact amount and wait for approval. Note: {order_id}", parse_mode="Markdown")
-                break
-
+        await q.message.reply_text(f"Order {order_id}\nBTC: `{BTC_WALLET}`\nNote: {order_id}", parse_mode="Markdown")
     elif d.startswith("paycash_"):
         order_id = d.replace("paycash_", "")
-        orders = load_json(ORDERS_FILE, [])
-        for o in orders:
-            if o["order_id"] == order_id:
-                await q.message.reply_text(f"Order {order_id}\nAmount: ${o['price']}\n\nCashApp: `{CASHAPP_TAG}`\nNote: `{order_id}`\n\nSend and wait for approval.", parse_mode="Markdown")
-                break
-
+        await q.message.reply_text(f"Order {order_id}\nCashApp: `{CASHAPP_TAG}`\nNote: {order_id}", parse_mode="Markdown")
     elif d.startswith("admin_del_"):
         if not is_admin(uid): return
         full = d.replace("admin_del_", "")
@@ -323,22 +304,23 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if o["order_id"] == order_id:
                 o["status"] = "approved"
                 save_json(ORDERS_FILE, orders)
-                new_bal = 0
                 if "TOPUP" in str(o.get("product","")):
                     amt = o.get("price") or o.get("amount") or 0
                     new_bal = add_balance(o["user_id"], float(amt))
+                    await q.edit_message_text(f"Approved {order_id} - New bal: ${new_bal:.2f}")
+                    try:
+                        await context.bot.send_message(chat_id=o["user_id"], text=f"Approved! ${amt} added!\nNew Balance: ${new_bal:.2f}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Check Balance", callback_data="balance")]]))
+                    except:
+                        pass
                 else:
-                    new_bal = get_user(o["user_id"]).get("balance",0)
-                await q.edit_message_text(f"Approved {order_id} - New bal: ${new_bal:.2f}")
-                try:
-                    if "TOPUP" in str(o.get("product","")):
-                        await context.bot.send_message(chat_id=o["user_id"], text=f"Approved! ${o.get('price')} added!\nNew Balance: ${new_bal:.2f}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Check Balance", callback_data="balance")]]))
-                    else:
-                        cat = get_cat_by_id(o.get("category","shop"))
-                        prod = load_json(cat["file"], [])[o.get("product_idx",0)] if o.get("product_idx") is not None else {"name": o["product"], "desc": "Approved"}
-                        await context.bot.send_message(chat_id=o["user_id"], text=f"Order {order_id} APPROVED!\n\n{prod['name']}\n\n{prod['desc']}")
-                except:
-                    pass
+                    cat = get_cat_by_id(o.get("category","shop"))
+                    prod = load_json(cat["file"], [])[o.get("product_idx",0)] if o.get("product_idx") is not None else {"name": o["product"]}
+                    await q.edit_message_text(f"Approved {order_id}")
+                    try:
+                        complete_msg = get_order_complete_message(order_id, o.get("username","no_username"), o["user_id"], prod['name'])
+                        await context.bot.send_message(chat_id=o["user_id"], text=complete_msg)
+                    except:
+                        pass
                 break
     elif d.startswith("decline_"):
         if not is_admin(uid): return
@@ -367,13 +349,10 @@ async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def add_balance_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
-    try:
-        raw = update.message.text.split(" ", 1)[1]
-        uid_str, amt = [x.strip() for x in raw.split("|")]
-        new_bal = add_balance(int(uid_str) if uid_str.isdigit() else uid_str, float(amt))
-        await update.message.reply_text(f"Added ${amt} to {uid_str} - New bal ${new_bal:.2f}")
-    except Exception as e:
-        await update.message.reply_text(f"Use: /addbalance user_id | 50 - {e}")
+    raw = update.message.text.split(" ", 1)[1]
+    uid_str, amt = [x.strip() for x in raw.split("|")]
+    new_bal = add_balance(int(uid_str) if uid_str.isdigit() else uid_str, float(amt))
+    await update.message.reply_text(f"Added ${amt} to {uid_str} - New bal ${new_bal:.2f}")
 
 def run_bot():
     b = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
