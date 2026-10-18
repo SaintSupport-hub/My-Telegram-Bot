@@ -11,11 +11,11 @@ BTC_WALLET = os.getenv("BTC_WALLET", "bc1q...")
 CASHAPP_TAG = os.getenv("CASHAPP_TAG", "$Saintlockecon")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "SaintSupport-hub/My-Telegram-Bot")
+RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "")  # Render gives you this automatically
 
 CATEGORIES_FILE = "categories.json"
 ORDERS_FILE = "orders.json"
 USERS_FILE = "users.json"
-OLD_ORDERS_FILE = "topup_orders.json"
 
 DEFAULT_CATEGORIES = [
     {"id": "shop", "name": "🛒Shop CC", "file": "products.json"},
@@ -27,44 +27,36 @@ def gh_headers():
     return {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.【entity-github¦canonical_name=GitHub】.v3+json"}
 
 def load_json(path, default):
-    local_data = None
+    local = None
     if os.path.exists(path):
         try:
             with open(path, "r") as f:
-                local_data = json.load(f)
+                local = json.load(f)
         except:
             pass
-    gh_data = None
+    gh = None
     if GITHUB_TOKEN:
         try:
             url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
             r = requests.get(url, headers=gh_headers(), timeout=15)
             if r.status_code == 200:
-                gh_data = json.loads(base64.b64decode(r.json()["content"]).decode())
+                gh = json.loads(base64.b64decode(r.json()["content"]).decode())
         except:
             pass
-    # MERGE LOGIC FOR USERS - keep highest balance
-    if path == USERS_FILE and local_data and gh_data:
-        merged = gh_data.copy()
-        for uid, info in local_data.items():
-            if uid not in merged:
+    if path == USERS_FILE and local and gh:
+        merged = gh.copy()
+        for uid, info in local.items():
+            if uid not in merged or float(info.get("balance",0)) > float(merged[uid].get("balance",0)):
                 merged[uid] = info
-            else:
-                # keep highest balance
-                try:
-                    if float(info.get("balance",0)) > float(merged[uid].get("balance",0)):
-                        merged[uid] = info
-                except:
-                    merged[uid] = info
         with open(path, "w") as f:
             json.dump(merged, f, indent=2)
         return merged
-    if local_data is not None:
-        return local_data
-    if gh_data is not None:
+    if local is not None:
+        return local
+    if gh is not None:
         with open(path, "w") as f:
-            json.dump(gh_data, f, indent=2)
-        return gh_data
+            json.dump(gh, f, indent=2)
+        return gh
     return default
 
 def save_json(path, data):
@@ -76,6 +68,17 @@ def save_json(path, data):
         url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
         r = requests.get(url, headers=gh_headers())
         sha = r.json().get("sha") if r.status_code == 200 else None
+        if r.status_code == 200 and path.startswith("products"):
+            try:
+                gh_data = json.loads(base64.b64decode(r.json()["content"]).decode())
+                if isinstance(gh_data, list) and isinstance(data, list) and len(data) < len(gh_data):
+                    names = {x.get('name') for x in gh_data}
+                    for it in data:
+                        if it.get('name') not in names:
+                            gh_data.append(it)
+                    data = gh_data
+            except:
+                pass
         payload = {"message": f"Update {path}", "content": base64.b64encode(json.dumps(data, indent=2).encode()).decode()}
         if sha:
             payload["sha"] = sha
@@ -115,13 +118,37 @@ def add_balance(uid, amt):
     save_json(USERS_FILE, users)
     return users[s]["balance"]
 
+def deduct_balance(uid, amt):
+    users = load_json(USERS_FILE, {})
+    s = str(uid)
+    if s not in users:
+        return 0
+    if float(users[s].get("balance",0)) < float(amt):
+        return None
+    users[s]["balance"] = float(users[s].get("balance", 0)) - float(amt)
+    save_json(USERS_FILE, users)
+    return users[s]["balance"]
+
 def gen_id():
     return "ORD-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+# --- KEEP ALIVE FOR RENDER FREE PLAN ---
+def keep_alive_loop():
+    while True:
+        time.sleep(600)  # 10 min
+        try:
+            # ping itself and also ping Render URL to keep awake
+            if RENDER_URL:
+                requests.get(RENDER_URL, timeout=10)
+                print(f"Keep alive ping {RENDER_URL}")
+            requests.get("http://localhost:10000/", timeout=5)
+        except Exception as e:
+            print(f"Keep alive fail {e}")
 
 app = Flask(__name__)
 @app.route("/")
 def home():
-    return "LIVE"
+    return "LIVE - SAINTLOCK CC BOT RUNNING 24/7"
 def run_web():
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 def is_admin(uid): return uid == ADMIN_ID
@@ -130,15 +157,12 @@ async def post_init(app):
     await app.bot.set_my_commands([
         BotCommand("start", "Open Shop Menu"),
         BotCommand("listproducts", "List products"),
-        BotCommand("addbalance", "Add balance manually"),
-        BotCommand("resave", "Force save all")
+        BotCommand("addbalance", "Add balance manually")
     ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cats = get_categories()
-    kb = []
-    for c in cats:
-        kb.append([InlineKeyboardButton(c["name"], callback_data=f"cat_{c['id']}")])
+    kb = [[InlineKeyboardButton(c["name"], callback_data=f"cat_{c['id']}")] for c in cats]
     kb.append([InlineKeyboardButton("Balance / Top Up", callback_data="balance")])
     kb.append([InlineKeyboardButton("SUPPORT", callback_data="support")])
     await update.message.reply_text("Welcome to SAINTLOCK CC", reply_markup=InlineKeyboardMarkup(kb))
@@ -150,9 +174,6 @@ async def show_balance(q, uid):
 
 async def show_category(q, cat_id, is_admin_view=False):
     cat = get_cat_by_id(cat_id)
-    if not cat:
-        await q.edit_message_text("Category not found", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="back")]]))
-        return
     products = load_json(cat["file"], [])
     if not products:
         await q.edit_message_text(f"{cat['name']} is empty", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="back")]]))
@@ -172,6 +193,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = q.from_user.id
     username = q.from_user.username or "no_username"
     admin_view = is_admin(uid)
+
     if d.startswith("cat_"):
         await show_category(q, d.replace("cat_", ""), is_admin_view=admin_view)
     elif d == "back":
@@ -196,7 +218,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         method = d.replace("topup_method_", "")
         amount = context.user_data.get("topup_amount", "20")
         order_id = gen_id()
-        # check both old and new order files
         orders = load_json(ORDERS_FILE, [])
         orders.append({"order_id": order_id,"user_id": uid,"username": username,"product": f"TOPUP ${amount}","price": amount,"method": method,"status": "pending"})
         save_json(ORDERS_FILE, orders)
@@ -216,6 +237,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=ADMIN_ID, text=f"NEW TOP UP\nUser: @{username} ({uid})\nOrder: {order_id}\nAmount: ${amount}\nMethod: {method}", reply_markup=admin_kb)
         except:
             pass
+
+    # PRODUCT CLICK - SHOW DESCRIPTION + 3 PAYMENT OPTIONS
     elif d.startswith("view_"):
         parts = d.replace("view_", "").rsplit("_", 1)
         cat_id = parts[0]
@@ -223,12 +246,60 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cat = get_cat_by_id(cat_id)
         products = load_json(cat["file"], [])
         p = products[idx]
+        bal = get_user(uid).get("balance", 0)
         order_id = gen_id()
         orders = load_json(ORDERS_FILE, [])
-        orders.append({"order_id": order_id,"user_id": uid,"username": username,"product": p["name"],"price": p["price"],"status": "pending", "category": cat_id})
+        orders.append({"order_id": order_id,"user_id": uid,"username": username,"product": p["name"],"price": p["price"],"status": "pending", "category": cat_id, "product_idx": idx})
         save_json(ORDERS_FILE, orders)
-        msg = f"**{p['name']}**\nPrice: ${p['price']}\nDesc: {p['desc']}\n\nOrder ID: `{order_id}`"
-        await q.message.reply_text(msg, parse_mode="Markdown")
+
+        text = f"*{p['name']}*\n\nPrice: ${p['price']}\n\nDesc: {p['desc']}\n\nYour Balance: ${bal:.2f}\n\nOrder ID: `{order_id}`\n\nChoose payment method:"
+        kb = [
+            [InlineKeyboardButton(f"Pay with Balance (${bal:.2f})", callback_data=f"paybal_{order_id}")],
+            [InlineKeyboardButton("Pay with Bitcoin", callback_data=f"paybtc_{order_id}")],
+            [InlineKeyboardButton("Pay with CashApp", callback_data=f"paycash_{order_id}")],
+            [InlineKeyboardButton("Back", callback_data=f"cat_{cat_id}")]
+        ]
+        await q.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+
+    elif d.startswith("paybal_"):
+        order_id = d.replace("paybal_", "")
+        orders = load_json(ORDERS_FILE, [])
+        for o in orders:
+            if o["order_id"] == order_id and o["user_id"] == uid:
+                price = float(o["price"])
+                bal = get_user(uid).get("balance", 0)
+                if bal < price:
+                    await q.message.reply_text(f"Not enough balance. You have ${bal:.2f}, need ${price:.2f}. Top up first.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Top Up", callback_data="balance")]]))
+                    return
+                new_bal = deduct_balance(uid, price)
+                o["status"] = "approved_balance"
+                save_json(ORDERS_FILE, orders)
+                # deliver product
+                cat = get_cat_by_id(o.get("category","shop"))
+                prod = load_json(cat["file"], [])[o.get("product_idx",0)] if o.get("product_idx") is not None else {"name": o["product"], "desc": "Delivered"}
+                await q.message.reply_text(f"PAID WITH BALANCE!\n\n{prod['name']} - ${price}\n\n{prod['desc']}\n\nNew Balance: ${new_bal:.2f}\nOrder {order_id} DELIVERED!")
+                try:
+                    await context.bot.send_message(chat_id=ADMIN_ID, text=f"BALANCE PURCHASE\nUser: @{username} ({uid})\nProduct: {prod['name']}\nPrice: ${price}\nOrder: {order_id}\nNew Bal: ${new_bal:.2f}")
+                except:
+                    pass
+                break
+
+    elif d.startswith("paybtc_"):
+        order_id = d.replace("paybtc_", "")
+        orders = load_json(ORDERS_FILE, [])
+        for o in orders:
+            if o["order_id"] == order_id:
+                await q.message.reply_text(f"Order {order_id}\nAmount: ${o['price']}\n\nBTC Wallet:\n`{BTC_WALLET}`\n\nSend exact amount and wait for approval. Note: {order_id}", parse_mode="Markdown")
+                break
+
+    elif d.startswith("paycash_"):
+        order_id = d.replace("paycash_", "")
+        orders = load_json(ORDERS_FILE, [])
+        for o in orders:
+            if o["order_id"] == order_id:
+                await q.message.reply_text(f"Order {order_id}\nAmount: ${o['price']}\n\nCashApp: `{CASHAPP_TAG}`\nNote: `{order_id}`\n\nSend and wait for approval.", parse_mode="Markdown")
+                break
+
     elif d.startswith("admin_del_"):
         if not is_admin(uid): return
         full = d.replace("admin_del_", "")
@@ -248,29 +319,24 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not is_admin(uid): return
         order_id = d.replace("approve_", "")
         orders = load_json(ORDERS_FILE, [])
-        # also check old file
-        if not any(o["order_id"] == order_id for o in orders):
-            old_orders = load_json(OLD_ORDERS_FILE, [])
-            for oo in old_orders:
-                if oo["order_id"] == order_id:
-                    orders.append(oo)
         for o in orders:
             if o["order_id"] == order_id:
                 o["status"] = "approved"
                 save_json(ORDERS_FILE, orders)
                 new_bal = 0
-                if "TOPUP" in o.get("product","", "") or "TOPUP" in str(o.get("order_id","")):
-                    # price can be in amount or price field
+                if "TOPUP" in str(o.get("product","")):
                     amt = o.get("price") or o.get("amount") or 0
                     new_bal = add_balance(o["user_id"], float(amt))
                 else:
-                    # also support TOPUP orders that have amount field
-                    amt = o.get("amount") or o.get("price") or 0
-                    if float(amt) > 0 and "TOPUP" in str(o):
-                        new_bal = add_balance(o["user_id"], float(amt))
+                    new_bal = get_user(o["user_id"]).get("balance",0)
                 await q.edit_message_text(f"Approved {order_id} - New bal: ${new_bal:.2f}")
                 try:
-                    await context.bot.send_message(chat_id=o["user_id"], text=f"Approved! ${o.get('price') or o.get('amount')} added!\nNew Balance: ${new_bal:.2f}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Check Balance", callback_data="balance")]]))
+                    if "TOPUP" in str(o.get("product","")):
+                        await context.bot.send_message(chat_id=o["user_id"], text=f"Approved! ${o.get('price')} added!\nNew Balance: ${new_bal:.2f}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Check Balance", callback_data="balance")]]))
+                    else:
+                        cat = get_cat_by_id(o.get("category","shop"))
+                        prod = load_json(cat["file"], [])[o.get("product_idx",0)] if o.get("product_idx") is not None else {"name": o["product"], "desc": "Approved"}
+                        await context.bot.send_message(chat_id=o["user_id"], text=f"Order {order_id} APPROVED!\n\n{prod['name']}\n\n{prod['desc']}")
                 except:
                     pass
                 break
@@ -309,39 +375,16 @@ async def add_balance_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Use: /addbalance user_id | 50 - {e}")
 
-async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
-    cat_id = update.message.text.split(" ", 1)[1].strip().lower() if len(update.message.text.split()) > 1 else "shop"
-    cat = get_cat_by_id(cat_id)
-    prods = load_json(cat["file"], [])
-    txt = "\n".join([f"{i}: {p['name']} - ${p['price']}" for i, p in enumerate(prods)])
-    await update.message.reply_text(f"{cat['name']} {len(prods)} items:\n{txt[:3500]}")
-
 def run_bot():
     b = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
     b.add_handler(CommandHandler("start", start))
     b.add_handler(CommandHandler("addproduct", add_product))
-    b.add_handler(CommandHandler("listproducts", list_products))
     b.add_handler(CommandHandler("addbalance", add_balance_cmd))
-    b.add_handler(CommandHandler("resave", lambda u,c: resave_all(u,c)))
     b.add_handler(CallbackQueryHandler(button_handler))
-    b.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u,c: u.message.reply_text("Click /start")))
+    b.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u,c: None))
     b.run_polling(drop_pending_updates=True)
-
-async def resave_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
-    cats = get_categories()
-    msg = ""
-    for c in cats:
-        prods = load_json(c["file"], [])
-        save_json(c["file"], prods)
-        msg += f"{c['file']}: {len(prods)}\n"
-    users = load_json(USERS_FILE, {})
-    msg += f"users: {len(users)} users\n"
-    for uid, info in users.items():
-        msg += f"{uid}: ${info.get('balance',0)}\n"
-    await update.message.reply_text(msg[:4000])
 
 if __name__ == "__main__":
     threading.Thread(target=run_web, daemon=True).start()
+    threading.Thread(target=keep_alive_loop, daemon=True).start()
     run_bot()
