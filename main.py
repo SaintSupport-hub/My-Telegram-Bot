@@ -55,21 +55,17 @@ def save_json(path, data, retry=3):
             url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
             r = requests.get(url, headers=gh_headers())
             sha = r.json().get("sha") if r.status_code == 200 else None
-            # If file exists on GH, load GH version and MERGE to avoid losing items added fast
             if r.status_code == 200 and path.startswith("products"):
                 try:
                     gh_data = json.loads(base64.b64decode(r.json()["content"]).decode())
-                    # Merge: if local has more items than GH, keep local. If GH has items local doesn't, keep both (dedup by name)
-                    if isinstance(gh_data, list) and isinstance(data, list):
-                        if len(data) < len(gh_data):
-                            # GH has more, keep GH + any new local items not in GH
-                            gh_names = {x.get('name') for x in gh_data}
-                            for item in data:
-                                if item.get('name') not in gh_names:
-                                    gh_data.append(item)
-                            data = gh_data
-                            with open(path, "w") as f:
-                                json.dump(data, f, indent=2)
+                    if isinstance(gh_data, list) and isinstance(data, list) and len(data) < len(gh_data):
+                        gh_names = {x.get('name') for x in gh_data}
+                        for item in data:
+                            if item.get('name') not in gh_names:
+                                gh_data.append(item)
+                        data = gh_data
+                        with open(path, "w") as f:
+                            json.dump(data, f, indent=2)
                 except:
                     pass
             payload = {"message": f"Update {path}", "content": base64.b64encode(json.dumps(data, indent=2).encode()).decode()}
@@ -77,13 +73,9 @@ def save_json(path, data, retry=3):
                 payload["sha"] = sha
             resp = requests.put(url, headers=gh_headers(), json=payload, timeout=15)
             if resp.status_code in [200,201]:
-                print(f"Saved {path} -> GH OK {len(data)} items")
                 return True
-            else:
-                print(f"Save {path} failed {resp.status_code} {resp.text} retry {attempt}")
-                time.sleep(1)
-        except Exception as e:
-            print(f"save fail {e} retry {attempt}")
+            time.sleep(1)
+        except:
             time.sleep(1)
     return False
 
@@ -141,7 +133,7 @@ async def post_init(app):
         BotCommand("start", "Open Shop Menu"),
         BotCommand("listproducts", "List products"),
         BotCommand("listcategories", "List categories"),
-        BotCommand("resave", "Force save all to GitHub")
+        BotCommand("resave", "Force save all")
     ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -174,10 +166,7 @@ async def show_category(q, cat_id, is_admin_view=False):
     for i, p in enumerate(products):
         kb.append([InlineKeyboardButton(f"{p['name']} - ${p['price']}", callback_data=f"view_{cat_id}_{i}")])
         if is_admin_view:
-            kb.append([
-                InlineKeyboardButton(f"Edit {i}", callback_data=f"admin_edit_{cat_id}_{i}"),
-                InlineKeyboardButton(f"Del {i}", callback_data=f"admin_del_{cat_id}_{i}")
-            ])
+            kb.append([InlineKeyboardButton(f"Edit {i}", callback_data=f"admin_edit_{cat_id}_{i}"), InlineKeyboardButton(f"Del {i}", callback_data=f"admin_del_{cat_id}_{i}")])
     kb.append([InlineKeyboardButton("Back", callback_data="back")])
     await q.edit_message_text(f"{cat['name']} - {len(products)} items:", reply_markup=InlineKeyboardMarkup(kb))
 
@@ -264,7 +253,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         prods = load_json(cat["file"], [])
         removed = prods.pop(idx)
         save_json(cat["file"], prods)
-        await q.edit_message_text(f"Deleted {removed['name']}")
+        await q.edit_message_text(f"Deleted {removed['name']} from {cat['name']}")
     elif d.startswith("admin_edit_"):
         if not is_admin(uid): return
         full = d.replace("admin_edit_", "")
@@ -280,11 +269,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if o["order_id"] == order_id:
                 o["status"] = "approved"
                 save_json(ORDERS_FILE, orders)
+                new_bal = 0
                 if "TOPUP" in o.get("product",""):
                     add_balance(o["user_id"], float(o["price"]))
-                await q.edit_message_text(f"Approved {order_id}")
+                    new_bal = get_user(o["user_id"]).get("balance", 0)
+                await q.edit_message_text(f"Approved {order_id} - New bal for user: ${new_bal:.2f}")
                 try:
-                    await context.bot.send_message(chat_id=o["user_id"], text=f"Order {order_id} APPROVED!")
+                    if "TOPUP" in o.get("product",""):
+                        await context.bot.send_message(chat_id=o["user_id"], text=f"Approved Top Up {order_id}\n${o['price']} added!\nNew Balance: ${new_bal:.2f}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Check Balance", callback_data="balance")]]))
+                    else:
+                        await context.bot.send_message(chat_id=o["user_id"], text=f"Order {order_id} APPROVED! Product: {o.get('product')}")
                 except:
                     pass
                 break
@@ -297,6 +291,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 o["status"] = "declined"
                 save_json(ORDERS_FILE, orders)
                 await q.edit_message_text(f"Declined {order_id}")
+                try:
+                    await context.bot.send_message(chat_id=o["user_id"], text=f"Order {order_id} DECLINED.")
+                except:
+                    pass
                 break
 
 async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -309,15 +307,12 @@ async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             cat_id, name, price, desc = "shop", parts[0], parts[1], parts[2]
         cat = get_cat_by_id(cat_id)
-        if not cat:
-            await update.message.reply_text(f"Category {cat_id} not found")
-            return
         prods = load_json(cat["file"], [])
         prods.append({"name": name, "price": price.replace("$",""), "desc": desc})
         ok = save_json(cat["file"], prods)
         await update.message.reply_text(f"Saved {name} to {cat['name']} - Total {len(prods)} - GH {ok}")
     except Exception as e:
-        await update.message.reply_text(f"Error {e}")
+        await update.message.reply_text(f"Use: /addproduct category_id | Name | Price | Desc - {e}")
 
 async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
