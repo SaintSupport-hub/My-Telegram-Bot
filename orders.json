@@ -39,6 +39,6 @@
     "product": "TOPUP $50",
     "price": "50",
     "method": "btc",
-    "status": "pending"
+    "status": "approved"
   }
 ]
