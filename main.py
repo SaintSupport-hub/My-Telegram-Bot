@@ -24,7 +24,7 @@ DEFAULT_CATEGORIES = [
 ]
 
 def gh_headers():
-    return {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd. github.v3+json"}
+    return {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.【entity-github¦canonical_name=GitHub】.v3+json"}
 
 def load_json(path, default):
     local = None
@@ -151,9 +151,7 @@ def is_admin(uid): return uid == ADMIN_ID
 
 async def post_init(app):
     await app.bot.set_my_commands([
-        BotCommand("start", "Open Shop Menu"),
-        BotCommand("listproducts", "List products"),
-        BotCommand("addbalance", "Add balance")
+        BotCommand("start", "Open Shop Menu")
     ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -335,29 +333,56 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
-    raw = update.message.text.split(" ", 1)[1]
-    parts = [x.strip() for x in raw.split("|")]
-    if len(parts) == 4:
-        cat_id, name, price, desc = parts[0].lower(), parts[1], parts[2], parts[3]
-    else:
-        cat_id, name, price, desc = "shop", parts[0], parts[1], parts[2]
+    try:
+        await update.message.delete()
+    except:
+        pass
+    try:
+        raw = update.message.text.split(" ", 1)[1]
+        parts = [x.strip() for x in raw.split("|")]
+        if len(parts) == 4:
+            cat_id, name, price, desc = parts[0].lower(), parts[1], parts[2], parts[3]
+        else:
+            cat_id, name, price, desc = "shop", parts[0], parts[1], parts[2]
+        cat = get_cat_by_id(cat_id)
+        prods = load_json(cat["file"], [])
+        prods.append({"name": name, "price": price.replace("$",""), "desc": desc})
+        save_json(cat["file"], prods)
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Saved {name} - Total {len(prods)}")
+    except Exception as e:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use: /addproduct category_id | Name | Price | Desc - {e}")
+
+async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try:
+        await update.message.delete()
+    except:
+        pass
+    cat_id = update.message.text.split(" ", 1)[1].strip().lower() if len(update.message.text.split()) > 1 else "shop"
     cat = get_cat_by_id(cat_id)
     prods = load_json(cat["file"], [])
-    prods.append({"name": name, "price": price.replace("$",""), "desc": desc})
-    save_json(cat["file"], prods)
-    await update.message.reply_text(f"Saved {name} - Total {len(prods)}")
+    txt = "\n".join([f"{i}: {p['name']} - ${p['price']}" for i, p in enumerate(prods)])
+    await context.bot.send_message(chat_id=ADMIN_ID, text=f"{cat['name']} {len(prods)} items:\n{txt[:3500]}")
 
 async def add_balance_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
-    raw = update.message.text.split(" ", 1)[1]
-    uid_str, amt = [x.strip() for x in raw.split("|")]
-    new_bal = add_balance(int(uid_str) if uid_str.isdigit() else uid_str, float(amt))
-    await update.message.reply_text(f"Added ${amt} to {uid_str} - New bal ${new_bal:.2f}")
+    try:
+        await update.message.delete()
+    except:
+        pass
+    try:
+        raw = update.message.text.split(" ", 1)[1]
+        uid_str, amt = [x.strip() for x in raw.split("|")]
+        new_bal = add_balance(int(uid_str) if uid_str.isdigit() else uid_str, float(amt))
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Added ${amt} to {uid_str} - New bal ${new_bal:.2f}")
+    except Exception as e:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use: /addbalance user_id | 50 - {e}")
 
 def run_bot():
     b = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
     b.add_handler(CommandHandler("start", start))
     b.add_handler(CommandHandler("addproduct", add_product))
+    b.add_handler(CommandHandler("listproducts", list_products))
     b.add_handler(CommandHandler("addbalance", add_balance_cmd))
     b.add_handler(CallbackQueryHandler(button_handler))
     b.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u,c: None))
