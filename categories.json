@@ -13,5 +13,20 @@
     "id": "shop_accessories",
     "name": "\ud83e\udd47Shop BINs",
     "file": "products_accessories.json"
+  },
+  {
+    "id": "shop_low",
+    "name": "\u2b07\ufe0fSHOP LOW % SNIFF [Med-Low Bal]",
+    "file": "products_low.json"
+  },
+  {
+    "id": "shop_high",
+    "name": "\u2b06\ufe0fSHOP HIGH % SNIFF [High Bal]",
+    "file": "products_high.json"
+  },
+  {
+    "id": "shop_food",
+    "name": "\ud83e\udd59Shop Food",
+    "file": "products_food.json"
   }
 ]
