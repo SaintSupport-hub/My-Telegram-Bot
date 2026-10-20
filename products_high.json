@@ -7,9 +7,9 @@
     "max_qty": 1
   },
   {
-    "name": "130",
-    "price": "AS*** F.C.U. - VISA-DEBIT-CLASSIC",
-    "desc": "Platform: MYCARDRULES\nCard: AS*** F.C.U.\nType: VISA-DEBIT-CLASSIC\nCountry: US\nState: NV\nZIP: 89166\nBalance: 1,664 [AUTO REFUND \u2705]",
+    "name": "AS*** F.C.U - VISA-DEBIT-CLASSIC",
+    "price": "130",
+    "desc": "Playform: MYCARDRULES Card: AS*** F.C.U Type VISA-DEBIT-CLASSIC \nCountry: US\nState: NV \nZIP: 89166\nBalance: 1,664 [AUTO REFUND \u2705]",
     "min_qty": 1,
     "max_qty": 1
   },
