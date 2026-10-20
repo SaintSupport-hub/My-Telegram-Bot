@@ -21,10 +21,10 @@
     "max_qty": 999
   },
   {
-    "name": "TE** B** - VISA-DEBIT-CLASSIC",
-    "price": "155",
-    "desc": "Platform: MYCARDRULES\nCard: TE** B**\nType: VISA-DEBIT-CLASSIC\nCountry: US\nState: TX\nZIP: 75702\nBalance: 3,983 [AUTO REFUND \u2705]",
+    "name": "CE** BA** - VISA-DEBIT-CLASSIC",
+    "price": "Platform: MYCARDRULES\nCard: CE** BA**\nType: VISA-DEBIT-CLASSIC\nCountry: US\nState: AL\nZIP: 35040\nBalance: 7,203 [AUTO REFUND \u2705]",
+    "desc": "1-1",
     "min_qty": 1,
-    "max_qty": 1
+    "max_qty": 999
   }
 ]
