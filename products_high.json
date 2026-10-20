@@ -19,5 +19,12 @@
     "desc": "1-1",
     "min_qty": 1,
     "max_qty": 999
+  },
+  {
+    "name": "TE** B** - VISA-DEBIT-CLASSIC",
+    "price": "155",
+    "desc": "Platform: MYCARDRULES\nCard: TE** B**\nType: VISA-DEBIT-CLASSIC\nCountry: US\nState: TX\nZIP: 75702\nBalance: 3,983 [AUTO REFUND \u2705]",
+    "min_qty": 1,
+    "max_qty": 1
   }
 ]
