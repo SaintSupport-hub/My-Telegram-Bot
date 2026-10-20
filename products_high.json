@@ -12,5 +12,12 @@
     "desc": "Platform: MYCARDRULES\nCard: AS*** F.C.U.\nType: VISA-DEBIT-CLASSIC\nCountry: US\nState: NV\nZIP: 89166\nBalance: 1,664 [AUTO REFUND \u2705]",
     "min_qty": 1,
     "max_qty": 1
+  },
+  {
+    "name": "TH*** CO** - VISA-DEBIT-CLASSIC",
+    "price": "Platform: MYCARDRULES\nCard: TH*** CO**\nType: VISA-DEBIT-CLASSIC\nCountry: US\nState: OH\nZIP: 44883\nBalance: 4,060 [AUTO REFUND \u2705]",
+    "desc": "1-1",
+    "min_qty": 1,
+    "max_qty": 999
   }
 ]
