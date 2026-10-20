@@ -20,11 +20,12 @@ USERS_FILE = "users.json"
 DEFAULT_CATEGORIES = [
     {"id": "shop", "name": "🛒Shop CC", "file": "products.json"},
     {"id": "shop_tees", "name": "🥊Shop Accounts", "file": "products_tees.json"},
-    {"id": "shop_accessories", "name": "🥇Shop BINs", "file": "products_accessories.json"}
+    {"id": "shop_accessories", "name": "🥇Shop BINs", "file": "products_accessories.json"},
+    {"id": "shop_food", "name": "🥙Shop Food", "file": "products_food.json"}
 ]
 
 def gh_headers():
-    return {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.【entity-github¦canonical_name=GitHub】.v3+json"}
+    return {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd. github.v3+json"}
 
 def load_json(path, default):
     local = None
@@ -51,6 +52,19 @@ def load_json(path, default):
         with open(path, "w") as f:
             json.dump(merged, f, indent=2)
         return merged
+    if path == CATEGORIES_FILE and local and gh:
+        # merge categories, keep Shop Food
+        merged_ids = {c["id"] for c in gh}
+        final = gh.copy()
+        for c in local:
+            if c["id"] not in merged_ids:
+                final.append(c)
+        # ensure Shop Food exists
+        if not any(c["id"] == "shop_food" for c in final):
+            final.append({"id": "shop_food", "name": "Shop Food", "file": "products_food.json"})
+        with open(path, "w") as f:
+            json.dump(final, f, indent=2)
+        return final
     if local is not None:
         return local
     if gh is not None:
@@ -78,6 +92,10 @@ def save_json(path, data):
 
 def get_categories():
     cats = load_json(CATEGORIES_FILE, DEFAULT_CATEGORIES)
+    # ensure Shop Food always exists
+    if not any(c["id"] == "shop_food" for c in cats):
+        cats.append({"id": "shop_food", "name": "Shop Food", "file": "products_food.json"})
+    # ensure file field
     for c in cats:
         if "file" not in c:
             c["file"] = f"products_{c['id']}.json" if c['id'] != 'shop' else "products.json"
@@ -131,13 +149,14 @@ def keep_alive_loop():
         except:
             pass
 
-def get_order_complete_message(order_id, username, user_id, product_name):
+def get_order_complete_message(order_id, username, user_id, product_name, option=""):
+    opt_text = f"\nOption: {option}" if option else ""
     return f"""✅ PURCHASE SUCCESSFUL!
 
 Order #: {order_id}
 Username: @{username}
 User ID: {user_id}
-Product: {product_name}
+Product: {product_name}{opt_text}
 
 Please contact @Saintlocksupport with your order # and screenshot of the receipt to receive your order. Happy Shopping!!!"""
 
@@ -150,9 +169,7 @@ def run_web():
 def is_admin(uid): return uid == ADMIN_ID
 
 async def post_init(app):
-    await app.bot.set_my_commands([
-        BotCommand("start", "Open Shop Menu")
-    ])
+    await app.bot.set_my_commands([BotCommand("start", "Open Shop Menu")])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cats = get_categories()
@@ -174,7 +191,8 @@ async def show_category(q, cat_id, is_admin_view=False):
         return
     kb = []
     for i, p in enumerate(products):
-        kb.append([InlineKeyboardButton(f"{p['name']} - ${p['price']}", callback_data=f"view_{cat_id}_{i}")])
+        opts = f" ({len(p.get('options',[]))} options)" if p.get('options') else ""
+        kb.append([InlineKeyboardButton(f"{p['name']} - ${p['price']}{opts}", callback_data=f"view_{cat_id}_{i}")])
         if is_admin_view:
             kb.append([InlineKeyboardButton(f"Edit {i}", callback_data=f"admin_edit_{cat_id}_{i}"), InlineKeyboardButton(f"Del {i}", callback_data=f"admin_del_{cat_id}_{i}")])
     kb.append([InlineKeyboardButton("Back", callback_data="back")])
@@ -231,6 +249,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=ADMIN_ID, text=f"NEW TOP UP\nUser: @{username} ({uid})\nOrder: {order_id}\nAmount: ${amount}\nMethod: {method}", reply_markup=admin_kb)
         except:
             pass
+
     elif d.startswith("view_"):
         parts = d.replace("view_", "").rsplit("_", 1)
         cat_id = parts[0]
@@ -241,16 +260,68 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bal = get_user(uid).get("balance", 0)
         order_id = gen_id()
         orders = load_json(ORDERS_FILE, [])
-        orders.append({"order_id": order_id,"user_id": uid,"username": username,"product": p["name"],"price": p["price"],"status": "pending", "category": cat_id, "product_idx": idx})
+        orders.append({"order_id": order_id,"user_id": uid,"username": username,"product": p["name"],"price": p["price"],"status": "pending", "category": cat_id, "product_idx": idx, "selected_option": ""})
         save_json(ORDERS_FILE, orders)
-        text = f"*{p['name']}*\n\nPrice: ${p['price']}\n\nDesc: {p['desc']}\n\nYour Balance: ${bal:.2f}\n\nOrder ID: `{order_id}`\n\nChoose payment method:"
-        kb = [
-            [InlineKeyboardButton(f"Pay with Balance (${bal:.2f})", callback_data=f"paybal_{order_id}")],
-            [InlineKeyboardButton("Pay with Bitcoin", callback_data=f"paybtc_{order_id}")],
-            [InlineKeyboardButton("Pay with CashApp", callback_data=f"paycash_{order_id}")],
-            [InlineKeyboardButton("Back", callback_data=f"cat_{cat_id}")]
-        ]
+
+        options = p.get("options", [])
+        opt_text = "\n\nAvailable Options: " + ", ".join(options) if options else "\n\nNo options for this product"
+        text = f"*{p['name']}*\n\nPrice: ${p['price']}\n\nDesc: {p['desc']}{opt_text}\n\nYour Balance: ${bal:.2f}\n\nOrder ID: `{order_id}`"
+        
+        kb = []
+        if options:
+            kb.append([InlineKeyboardButton("Available Options ⬇️", callback_data=f"showopts_{order_id}")])
+            for opt in options:
+                kb.append([InlineKeyboardButton(f"Select: {opt}", callback_data=f"selopt_{order_id}_{opt}")])
+        kb.append([InlineKeyboardButton(f"Pay with Balance (${bal:.2f})", callback_data=f"paybal_{order_id}")])
+        kb.append([InlineKeyboardButton("Pay with Bitcoin", callback_data=f"paybtc_{order_id}")])
+        kb.append([InlineKeyboardButton("Pay with CashApp", callback_data=f"paycash_{order_id}")])
+        kb.append([InlineKeyboardButton("Back", callback_data=f"cat_{cat_id}")])
         await q.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+
+    elif d.startswith("showopts_"):
+        order_id = d.replace("showopts_", "")
+        orders = load_json(ORDERS_FILE, [])
+        for o in orders:
+            if o["order_id"] == order_id:
+                cat = get_cat_by_id(o.get("category","shop"))
+                prod = load_json(cat["file"], [])[o.get("product_idx",0)]
+                opts = prod.get("options", [])
+                if not opts:
+                    await q.answer("No options for this product", show_alert=True)
+                    return
+                kb = [[InlineKeyboardButton(f"Select {opt}", callback_data=f"selopt_{order_id}_{opt}")] for opt in opts]
+                kb.append([InlineKeyboardButton("Back", callback_data=f"view_{o['category']}_{o['product_idx']}")])
+                await q.message.reply_text(f"Available Options for {prod['name']}:\n" + "\n".join([f"• {opt}" for opt in opts]), reply_markup=InlineKeyboardMarkup(kb))
+                break
+
+    elif d.startswith("selopt_"):
+        # selopt_ORDERID_OPTION
+        rest = d.replace("selopt_", "")
+        order_id, selected = rest.split("_", 1)
+        orders = load_json(ORDERS_FILE, [])
+        for o in orders:
+            if o["order_id"] == order_id:
+                o["selected_option"] = selected
+                save_json(ORDERS_FILE, orders)
+                await q.answer(f"Selected: {selected}")
+                # update the message to show selected
+                cat = get_cat_by_id(o.get("category","shop"))
+                prod = load_json(cat["file"], [])[o.get("product_idx",0)]
+                bal = get_user(uid).get("balance", 0)
+                text = f"*{prod['name']}*\n\nPrice: ${prod['price']}\n\nDesc: {prod['desc']}\n\nSelected Option: *{selected}*\n\nYour Balance: ${bal:.2f}\n\nOrder ID: `{order_id}`"
+                kb = [
+                    [InlineKeyboardButton(f"Pay with Balance (${bal:.2f})", callback_data=f"paybal_{order_id}")],
+                    [InlineKeyboardButton("Pay with Bitcoin", callback_data=f"paybtc_{order_id}")],
+                    [InlineKeyboardButton("Pay with CashApp", callback_data=f"paycash_{order_id}")],
+                    [InlineKeyboardButton("Change Option", callback_data=f"showopts_{order_id}")],
+                    [InlineKeyboardButton("Back", callback_data=f"cat_{o['category']}")]
+                ]
+                try:
+                    await q.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+                except:
+                    await q.message.reply_text(f"Selected option: {selected} for order {order_id}. Now choose payment.")
+                break
+
     elif d.startswith("paybal_"):
         order_id = d.replace("paybal_", "")
         orders = load_json(ORDERS_FILE, [])
@@ -266,7 +337,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 save_json(ORDERS_FILE, orders)
                 cat = get_cat_by_id(o.get("category","shop"))
                 prod = load_json(cat["file"], [])[o.get("product_idx",0)] if o.get("product_idx") is not None else {"name": o["product"]}
-                complete_msg = get_order_complete_message(order_id, username, uid, prod['name'])
+                complete_msg = get_order_complete_message(order_id, username, uid, prod['name'], o.get("selected_option",""))
                 await q.message.reply_text(complete_msg)
                 try:
                     await context.bot.send_message(chat_id=ADMIN_ID, text=f"BALANCE PURCHASE\n{complete_msg}\nNew Bal: ${new_bal:.2f}")
@@ -279,6 +350,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif d.startswith("paycash_"):
         order_id = d.replace("paycash_", "")
         await q.message.reply_text(f"Order {order_id}\nCashApp: `{CASHAPP_TAG}`\nNote: {order_id}", parse_mode="Markdown")
+
     elif d.startswith("admin_del_"):
         if not is_admin(uid): return
         full = d.replace("admin_del_", "")
@@ -293,7 +365,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         full = d.replace("admin_edit_", "")
         cat_id, idx = full.rsplit("_", 1)
         p = load_json(get_cat_by_id(cat_id)["file"], [])[int(idx)]
-        await q.message.reply_text(f"/editproduct {cat_id} | {idx} | {p['name']} | {p['price']} | {p['desc']}")
+        opts = ", ".join(p.get("options",[]))
+        await q.message.reply_text(f"/editproduct {cat_id} | {idx} | {p['name']} | {p['price']} | {p['desc']} | {opts}")
     elif d.startswith("approve_"):
         if not is_admin(uid): return
         order_id = d.replace("approve_", "")
@@ -315,7 +388,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     prod = load_json(cat["file"], [])[o.get("product_idx",0)] if o.get("product_idx") is not None else {"name": o["product"]}
                     await q.edit_message_text(f"Approved {order_id}")
                     try:
-                        complete_msg = get_order_complete_message(order_id, o.get("username","no_username"), o["user_id"], prod['name'])
+                        complete_msg = get_order_complete_message(order_id, o.get("username","no_username"), o["user_id"], prod['name'], o.get("selected_option",""))
                         await context.bot.send_message(chat_id=o["user_id"], text=complete_msg)
                     except:
                         pass
@@ -340,17 +413,79 @@ async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         raw = update.message.text.split(" ", 1)[1]
         parts = [x.strip() for x in raw.split("|")]
-        if len(parts) == 4:
+        # Format: cat | Name | Price | Desc | Small, Medium, Large
+        if len(parts) == 5:
+            cat_id, name, price, desc, opts_raw = parts[0].lower(), parts[1], parts[2], parts[3], parts[4]
+            options = [o.strip() for o in opts_raw.split(",") if o.strip()]
+        elif len(parts) == 4:
             cat_id, name, price, desc = parts[0].lower(), parts[1], parts[2], parts[3]
+            options = []
         else:
             cat_id, name, price, desc = "shop", parts[0], parts[1], parts[2]
+            options = []
+        cat = get_cat_by_id(cat_id)
+        if not cat:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"Category {cat_id} not found")
+            return
+        prods = load_json(cat["file"], [])
+        new_prod = {"name": name, "price": price.replace("$",""), "desc": desc}
+        if options:
+            new_prod["options"] = options
+        prods.append(new_prod)
+        save_json(cat["file"], prods)
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Saved {name} to {cat['name']} - Options: {options} - Total {len(prods)}")
+    except Exception as e:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use: /addproduct cat | Name | Price | Desc | Small, Medium, Large - Error: {e}")
+
+async def add_options_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try:
+        await update.message.delete()
+    except:
+        pass
+    try:
+        raw = update.message.text.split(" ", 1)[1]
+        cat_id, idx, opts_raw = [x.strip() for x in raw.split("|", 2)]
+        idx = int(idx)
+        options = [o.strip() for o in opts_raw.split(",") if o.strip()]
+        cat = get_cat_by_id(cat_id.lower())
+        prods = load_json(cat["file"], [])
+        prods[idx]["options"] = options
+        save_json(cat["file"], prods)
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Added options to {prods[idx]['name']}: {options}")
+    except Exception as e:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use: /addoptions shop_tees | 0 | Small, Medium, Large - {e}")
+
+async def edit_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try:
+        await update.message.delete()
+    except:
+        pass
+    try:
+        raw = update.message.text.split(" ", 1)[1]
+        parts = [x.strip() for x in raw.split("|")]
+        if len(parts) == 6:
+            cat_id, idx, name, price, desc, opts_raw = parts[0].lower(), int(parts[1]), parts[2], parts[3], parts[4], parts[5]
+            options = [o.strip() for o in opts_raw.split(",") if o.strip()]
+        else:
+            cat_id, idx, name, price, desc = parts[0].lower(), int(parts[1]), parts[2], parts[3], parts[4]
+            options = None
         cat = get_cat_by_id(cat_id)
         prods = load_json(cat["file"], [])
-        prods.append({"name": name, "price": price.replace("$",""), "desc": desc})
+        new_data = {"name": name, "price": price.replace("$",""), "desc": desc}
+        if options is not None:
+            if options:
+                new_data["options"] = options
+        else:
+            # keep old options if not provided
+            if "options" in prods[idx]:
+                new_data["options"] = prods[idx]["options"]
+        prods[idx] = new_data
         save_json(cat["file"], prods)
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Saved {name} - Total {len(prods)}")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Edited #{idx} to {name} Options: {new_data.get('options',[])}")
     except Exception as e:
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use: /addproduct category_id | Name | Price | Desc - {e}")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use: /editproduct cat | idx | Name | Price | Desc | Small, Medium - {e}")
 
 async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
@@ -361,7 +496,7 @@ async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cat_id = update.message.text.split(" ", 1)[1].strip().lower() if len(update.message.text.split()) > 1 else "shop"
     cat = get_cat_by_id(cat_id)
     prods = load_json(cat["file"], [])
-    txt = "\n".join([f"{i}: {p['name']} - ${p['price']}" for i, p in enumerate(prods)])
+    txt = "\n".join([f"{i}: {p['name']} - ${p['price']} Options: {p.get('options',[])}" for i, p in enumerate(prods)])
     await context.bot.send_message(chat_id=ADMIN_ID, text=f"{cat['name']} {len(prods)} items:\n{txt[:3500]}")
 
 async def add_balance_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -382,6 +517,8 @@ def run_bot():
     b = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
     b.add_handler(CommandHandler("start", start))
     b.add_handler(CommandHandler("addproduct", add_product))
+    b.add_handler(CommandHandler("addoptions", add_options_cmd))
+    b.add_handler(CommandHandler("editproduct", edit_product))
     b.add_handler(CommandHandler("listproducts", list_products))
     b.add_handler(CommandHandler("addbalance", add_balance_cmd))
     b.add_handler(CallbackQueryHandler(button_handler))
