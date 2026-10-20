@@ -26,11 +26,10 @@ DEFAULT_CATEGORIES = [
     {"id": "shop_food", "name": "🥙Shop Food", "file": "products_food.json"}
 ]
 
-# Only show these in main menu - low/high are hidden and only show after clicking Shop CC
 MAIN_MENU_IDS = ["shop", "shop_tees", "shop_accessories", "shop_food"]
 
 def gh_headers():
-    return {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd. github.v3+json"}
+    return {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd. 【entity-github¦canonical_name=GitHub】.v3+json"}
 
 def load_json(path, default):
     local = None
@@ -58,14 +57,20 @@ def load_json(path, default):
             json.dump(merged, f, indent=2)
         return merged
     if path == CATEGORIES_FILE and local and gh:
-        merged_ids = {c["id"] for c in gh}
-        final = gh.copy()
-        for c in local:
-            if c["id"] not in merged_ids:
-                final.append(c)
-        for dc in DEFAULT_CATEGORIES:
-            if not any(c["id"] == dc["id"] for c in final):
-                final.append(dc)
+        # Merge and fix files
+        final = []
+        seen = set()
+        for src in [gh, local, DEFAULT_CATEGORIES]:
+            for c in src:
+                if c["id"] not in seen:
+                    final.append(c)
+                    seen.add(c["id"])
+        # Force correct files for low/high
+        for c in final:
+            if c["id"] == "shop_low":
+                c["file"] = "products_low.json"
+            if c["id"] == "shop_high":
+                c["file"] = "products_high.json"
         with open(path, "w") as f:
             json.dump(final, f, indent=2)
         return final
@@ -99,8 +104,15 @@ def get_categories():
     for dc in DEFAULT_CATEGORIES:
         if not any(c["id"] == dc["id"] for c in cats):
             cats.append(dc)
+    # FIX: force correct filenames
     for c in cats:
-        if "file" not in c:
+        if c["id"] == "shop_low":
+            c["file"] = "products_low.json"
+        elif c["id"] == "shop_high":
+            c["file"] = "products_high.json"
+        elif c["id"] == "shop":
+            c["file"] = "products.json"
+        elif "file" not in c:
             c["file"] = f"products_{c['id']}.json"
     save_json(CATEGORIES_FILE, cats)
     return cats
@@ -219,9 +231,12 @@ async def show_balance(q, uid):
 
 async def show_category(q, cat_id, is_admin_view=False):
     cat = get_cat_by_id(cat_id)
+    if not cat:
+        await q.edit_message_text(f"Category {cat_id} not found", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="back")]]))
+        return
     products = load_json(cat["file"], [])
     if not products:
-        await q.edit_message_text(f"{cat['name']} is empty", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="back")]]))
+        await q.edit_message_text(f"{cat['name']} is empty - No products yet\nFile: {cat['file']}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="back")]]))
         return
     kb = []
     for i, p in enumerate(products):
@@ -242,7 +257,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_view = is_admin(uid)
 
     if d == "cat_shop":
-        # SHOW 2 OPTIONS BEFORE OPENING SHOP CC
         kb = [
             [InlineKeyboardButton("SHOP LOW % SNIFF [Med-Low Bal]", callback_data="cat_shop_low")],
             [InlineKeyboardButton("SHOP HIGH % SNIFF [High Bal]", callback_data="cat_shop_high")],
@@ -304,6 +318,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         idx = int(parts[1])
         cat = get_cat_by_id(cat_id)
         products = load_json(cat["file"], [])
+        if idx >= len(products):
+            await q.message.reply_text("Product not found, it may have been deleted. Go back.")
+            return
         p = products[idx]
         bal = get_user(uid).get("balance", 0)
         order_id = gen_id()
@@ -480,7 +497,7 @@ async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
             options = []
         cat = get_cat_by_id(cat_id)
         if not cat:
-            await context.bot.send_message(chat_id=ADMIN_ID, text=f"Category {cat_id} not found. Use: shop, shop_low, shop_high, shop_tees, shop_accessories, shop_food")
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"Category {cat_id} not found. Use: shop_low, shop_high, shop, shop_tees, shop_accessories, shop_food")
             return
         prods = load_json(cat["file"], [])
         new_prod = {"name": name, "price": price.replace("$",""), "desc": desc}
@@ -488,9 +505,9 @@ async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
             new_prod["options"] = options
         prods.append(new_prod)
         save_json(cat["file"], prods)
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Saved {name} to {cat['name']} - Options: {options} - Total {len(prods)}")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Saved {name} to {cat['name']} ({cat['file']}) - Options: {options} - Total {len(prods)}")
     except Exception as e:
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use: /addproduct cat | Name | Price | Desc | Small:9.50, Medium:10.50 - Error: {e}")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use: /addproduct cat | Name | Price | Desc | Small:9.50 - Error: {e}")
 
 async def add_options_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
@@ -509,7 +526,7 @@ async def add_options_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_json(cat["file"], prods)
         await context.bot.send_message(chat_id=ADMIN_ID, text=f"Added options to {prods[idx]['name']}: {options}")
     except Exception as e:
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use: /addoptions shop_low | 0 | Small:9.50, Medium:10.50 - {e}")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use: /addoptions shop_low | 0 | Small:9.50 - {e}")
 
 async def edit_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
@@ -537,9 +554,9 @@ async def edit_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 new_data["options"] = prods[idx]["options"]
         prods[idx] = new_data
         save_json(cat["file"], prods)
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Edited #{idx} to {name} Options: {new_data.get('options',[])}")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Edited #{idx} to {name}")
     except Exception as e:
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use: /editproduct cat | idx | Name | Price | Desc | Small:9.50 - {e}")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}")
 
 async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
@@ -547,14 +564,14 @@ async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.delete()
     except:
         pass
-    cat_id = update.message.text.split(" ", 1)[1].strip().lower() if len(update.message.text.split()) > 1 else "shop"
+    cat_id = update.message.text.split(" ", 1)[1].strip().lower() if len(update.message.text.split()) > 1 else "shop_low"
     cat = get_cat_by_id(cat_id)
     if not cat:
         await context.bot.send_message(chat_id=ADMIN_ID, text=f"Category {cat_id} not found")
         return
     prods = load_json(cat["file"], [])
     txt = "\n".join([f"{i}: {p['name']} - ${p['price']} Options: {p.get('options',[])}" for i, p in enumerate(prods)])
-    await context.bot.send_message(chat_id=ADMIN_ID, text=f"{cat['name']} {len(prods)} items:\n{txt[:3500]}")
+    await context.bot.send_message(chat_id=ADMIN_ID, text=f"{cat['name']} ({cat['file']}) {len(prods)} items:\n{txt[:3500]}")
 
 async def add_balance_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
