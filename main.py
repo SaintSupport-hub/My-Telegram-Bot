@@ -1,4 +1,4 @@
-import os, json, threading, base64, requests, random, string, io, time
+import os, json, threading, base64, requests, random, string, io, time, re
 from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
@@ -53,13 +53,11 @@ def load_json(path, default):
             json.dump(merged, f, indent=2)
         return merged
     if path == CATEGORIES_FILE and local and gh:
-        # merge categories, keep Shop Food
         merged_ids = {c["id"] for c in gh}
         final = gh.copy()
         for c in local:
             if c["id"] not in merged_ids:
                 final.append(c)
-        # ensure Shop Food exists
         if not any(c["id"] == "shop_food" for c in final):
             final.append({"id": "shop_food", "name": "Shop Food", "file": "products_food.json"})
         with open(path, "w") as f:
@@ -92,10 +90,8 @@ def save_json(path, data):
 
 def get_categories():
     cats = load_json(CATEGORIES_FILE, DEFAULT_CATEGORIES)
-    # ensure Shop Food always exists
     if not any(c["id"] == "shop_food" for c in cats):
         cats.append({"id": "shop_food", "name": "Shop Food", "file": "products_food.json"})
-    # ensure file field
     for c in cats:
         if "file" not in c:
             c["file"] = f"products_{c['id']}.json" if c['id'] != 'shop' else "products.json"
@@ -149,16 +145,48 @@ def keep_alive_loop():
         except:
             pass
 
-def get_order_complete_message(order_id, username, user_id, product_name, option=""):
+def get_order_complete_message(order_id, username, user_id, product_name, option="", price=""):
     opt_text = f"\nOption: {option}" if option else ""
+    price_text = f"\nPrice Paid: ${price}" if price else ""
     return f"""✅ PURCHASE SUCCESSFUL!
 
 Order #: {order_id}
 Username: @{username}
 User ID: {user_id}
-Product: {product_name}{opt_text}
+Product: {product_name}{opt_text}{price_text}
 
 Please contact @Saintlocksupport with your order # and screenshot of the receipt to receive your order. Happy Shopping!!!"""
+
+# FIXED: Only treats as price if : or $ is used, so "Shirt 1256" is NOT $1256
+def parse_options_string(opts_raw):
+    if not opts_raw:
+        return []
+    result = []
+    parts = [p.strip() for p in opts_raw.split(",") if p.strip()]
+    for part in parts:
+        # Case 1: Has colon -> Name:Price  e.g. Small:9.50 or Shirt 1256:9.50
+        if ":" in part:
+            name_part, price_part = part.rsplit(":", 1)
+            price_part = price_part.replace("$","").strip()
+            try:
+                price = float(price_part)
+                result.append({"name": name_part.strip(), "price": price})
+                continue
+            except:
+                pass
+        # Case 2: Has $ -> Name $Price
+        if "$" in part:
+            name_part, price_part = part.rsplit("$", 1)
+            price_part = price_part.strip()
+            try:
+                price = float(price_part)
+                result.append({"name": name_part.strip(), "price": price})
+                continue
+            except:
+                pass
+        # No : or $ = just a name, even if it has numbers like "Shirt 1256"
+        result.append({"name": part.strip(), "price": None})
+    return result
 
 app = Flask(__name__)
 @app.route("/")
@@ -191,8 +219,9 @@ async def show_category(q, cat_id, is_admin_view=False):
         return
     kb = []
     for i, p in enumerate(products):
-        opts = f" ({len(p.get('options',[]))} options)" if p.get('options') else ""
-        kb.append([InlineKeyboardButton(f"{p['name']} - ${p['price']}{opts}", callback_data=f"view_{cat_id}_{i}")])
+        opts = p.get("options", [])
+        opts_text = f" ({len(opts)} opts)" if opts else ""
+        kb.append([InlineKeyboardButton(f"{p['name']} - ${p['price']}{opts_text}", callback_data=f"view_{cat_id}_{i}")])
         if is_admin_view:
             kb.append([InlineKeyboardButton(f"Edit {i}", callback_data=f"admin_edit_{cat_id}_{i}"), InlineKeyboardButton(f"Del {i}", callback_data=f"admin_del_{cat_id}_{i}")])
     kb.append([InlineKeyboardButton("Back", callback_data="back")])
@@ -260,66 +289,65 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bal = get_user(uid).get("balance", 0)
         order_id = gen_id()
         orders = load_json(ORDERS_FILE, [])
-        orders.append({"order_id": order_id,"user_id": uid,"username": username,"product": p["name"],"price": p["price"],"status": "pending", "category": cat_id, "product_idx": idx, "selected_option": ""})
+        orders.append({"order_id": order_id,"user_id": uid,"username": username,"product": p["name"],"price": p["price"],"status": "pending", "category": cat_id, "product_idx": idx, "selected_option": "", "selected_price": p["price"]})
         save_json(ORDERS_FILE, orders)
 
         options = p.get("options", [])
-        opt_text = "\n\nAvailable Options: " + ", ".join(options) if options else "\n\nNo options for this product"
-        text = f"*{p['name']}*\n\nPrice: ${p['price']}\n\nDesc: {p['desc']}{opt_text}\n\nYour Balance: ${bal:.2f}\n\nOrder ID: `{order_id}`"
-        
+        normalized = []
+        for opt in options:
+            if isinstance(opt, dict):
+                normalized.append(opt)
+            else:
+                normalized.append({"name": str(opt), "price": None})
+        opt_text = ""
+        if normalized:
+            opt_lines = "\n".join([f"• {o['name']} - ${o['price']:.2f}" if o.get("price") is not None else f"• {o['name']} - ${p['price']}" for o in normalized])
+            opt_text = f"\n\nAvailable Options:\n{opt_lines}"
+        else:
+            opt_text = "\n\nNo options"
+
+        text = f"*{p['name']}*\n\nBase Price: ${p['price']}\n\nDesc: {p['desc']}{opt_text}\n\nYour Balance: ${bal:.2f}\n\nOrder ID: `{order_id}`"
         kb = []
-        if options:
-            kb.append([InlineKeyboardButton("Available Options ⬇️", callback_data=f"showopts_{order_id}")])
-            for opt in options:
-                kb.append([InlineKeyboardButton(f"Select: {opt}", callback_data=f"selopt_{order_id}_{opt}")])
+        if normalized:
+            for o in normalized:
+                price_show = f" ${o['price']:.2f}" if o.get("price") is not None else ""
+                kb.append([InlineKeyboardButton(f"{o['name']}{price_show}", callback_data=f"selopt_{order_id}_{o['name']}")])
         kb.append([InlineKeyboardButton(f"Pay with Balance (${bal:.2f})", callback_data=f"paybal_{order_id}")])
         kb.append([InlineKeyboardButton("Pay with Bitcoin", callback_data=f"paybtc_{order_id}")])
         kb.append([InlineKeyboardButton("Pay with CashApp", callback_data=f"paycash_{order_id}")])
         kb.append([InlineKeyboardButton("Back", callback_data=f"cat_{cat_id}")])
         await q.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
 
-    elif d.startswith("showopts_"):
-        order_id = d.replace("showopts_", "")
+    elif d.startswith("selopt_"):
+        rest = d.replace("selopt_", "")
+        order_id, selected_name = rest.split("_", 1)
         orders = load_json(ORDERS_FILE, [])
         for o in orders:
             if o["order_id"] == order_id:
                 cat = get_cat_by_id(o.get("category","shop"))
                 prod = load_json(cat["file"], [])[o.get("product_idx",0)]
                 opts = prod.get("options", [])
-                if not opts:
-                    await q.answer("No options for this product", show_alert=True)
-                    return
-                kb = [[InlineKeyboardButton(f"Select {opt}", callback_data=f"selopt_{order_id}_{opt}")] for opt in opts]
-                kb.append([InlineKeyboardButton("Back", callback_data=f"view_{o['category']}_{o['product_idx']}")])
-                await q.message.reply_text(f"Available Options for {prod['name']}:\n" + "\n".join([f"• {opt}" for opt in opts]), reply_markup=InlineKeyboardMarkup(kb))
-                break
-
-    elif d.startswith("selopt_"):
-        # selopt_ORDERID_OPTION
-        rest = d.replace("selopt_", "")
-        order_id, selected = rest.split("_", 1)
-        orders = load_json(ORDERS_FILE, [])
-        for o in orders:
-            if o["order_id"] == order_id:
-                o["selected_option"] = selected
+                selected_price = None
+                for opt in opts:
+                    if isinstance(opt, dict) and opt["name"] == selected_name:
+                        selected_price = opt.get("price")
+                        break
+                if selected_price is None:
+                    selected_price = float(prod["price"])
+                o["selected_option"] = selected_name
+                o["selected_price"] = selected_price
+                o["price"] = selected_price
                 save_json(ORDERS_FILE, orders)
-                await q.answer(f"Selected: {selected}")
-                # update the message to show selected
-                cat = get_cat_by_id(o.get("category","shop"))
-                prod = load_json(cat["file"], [])[o.get("product_idx",0)]
+                await q.answer(f"Selected: {selected_name} - ${selected_price:.2f}")
                 bal = get_user(uid).get("balance", 0)
-                text = f"*{prod['name']}*\n\nPrice: ${prod['price']}\n\nDesc: {prod['desc']}\n\nSelected Option: *{selected}*\n\nYour Balance: ${bal:.2f}\n\nOrder ID: `{order_id}`"
+                text = f"*{prod['name']}*\n\nSelected: *{selected_name}* - ${selected_price:.2f}\n\nDesc: {prod['desc']}\n\nYour Balance: ${bal:.2f}\n\nOrder ID: `{order_id}`"
                 kb = [
                     [InlineKeyboardButton(f"Pay with Balance (${bal:.2f})", callback_data=f"paybal_{order_id}")],
                     [InlineKeyboardButton("Pay with Bitcoin", callback_data=f"paybtc_{order_id}")],
                     [InlineKeyboardButton("Pay with CashApp", callback_data=f"paycash_{order_id}")],
-                    [InlineKeyboardButton("Change Option", callback_data=f"showopts_{order_id}")],
-                    [InlineKeyboardButton("Back", callback_data=f"cat_{o['category']}")]
+                    [InlineKeyboardButton("Change Option", callback_data=f"view_{o['category']}_{o['product_idx']}")],
                 ]
-                try:
-                    await q.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
-                except:
-                    await q.message.reply_text(f"Selected option: {selected} for order {order_id}. Now choose payment.")
+                await q.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
                 break
 
     elif d.startswith("paybal_"):
@@ -327,7 +355,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         orders = load_json(ORDERS_FILE, [])
         for o in orders:
             if o["order_id"] == order_id and o["user_id"] == uid:
-                price = float(o["price"])
+                price = float(o.get("selected_price") or o.get("price"))
                 bal = get_user(uid).get("balance", 0)
                 if bal < price:
                     await q.message.reply_text(f"Not enough balance. You have ${bal:.2f}, need ${price:.2f}.")
@@ -337,7 +365,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 save_json(ORDERS_FILE, orders)
                 cat = get_cat_by_id(o.get("category","shop"))
                 prod = load_json(cat["file"], [])[o.get("product_idx",0)] if o.get("product_idx") is not None else {"name": o["product"]}
-                complete_msg = get_order_complete_message(order_id, username, uid, prod['name'], o.get("selected_option",""))
+                complete_msg = get_order_complete_message(order_id, username, uid, prod['name'], o.get("selected_option",""), price)
                 await q.message.reply_text(complete_msg)
                 try:
                     await context.bot.send_message(chat_id=ADMIN_ID, text=f"BALANCE PURCHASE\n{complete_msg}\nNew Bal: ${new_bal:.2f}")
@@ -346,10 +374,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 break
     elif d.startswith("paybtc_"):
         order_id = d.replace("paybtc_", "")
-        await q.message.reply_text(f"Order {order_id}\nBTC: `{BTC_WALLET}`\nNote: {order_id}", parse_mode="Markdown")
+        orders = load_json(ORDERS_FILE, [])
+        for o in orders:
+            if o["order_id"] == order_id:
+                price = o.get("selected_price") or o.get("price")
+                await q.message.reply_text(f"Order {order_id}\nAmount: ${price}\nBTC: `{BTC_WALLET}`\nNote: {order_id}", parse_mode="Markdown")
+                break
     elif d.startswith("paycash_"):
         order_id = d.replace("paycash_", "")
-        await q.message.reply_text(f"Order {order_id}\nCashApp: `{CASHAPP_TAG}`\nNote: {order_id}", parse_mode="Markdown")
+        orders = load_json(ORDERS_FILE, [])
+        for o in orders:
+            if o["order_id"] == order_id:
+                price = o.get("selected_price") or o.get("price")
+                await q.message.reply_text(f"Order {order_id}\nAmount: ${price}\nCashApp: `{CASHAPP_TAG}`\nNote: {order_id}", parse_mode="Markdown")
+                break
 
     elif d.startswith("admin_del_"):
         if not is_admin(uid): return
@@ -365,7 +403,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         full = d.replace("admin_edit_", "")
         cat_id, idx = full.rsplit("_", 1)
         p = load_json(get_cat_by_id(cat_id)["file"], [])[int(idx)]
-        opts = ", ".join(p.get("options",[]))
+        opts = ", ".join([f"{o['name']}:{o['price']}" if isinstance(o, dict) and o.get('price') is not None else o['name'] if isinstance(o, dict) else str(o) for o in p.get("options",[])])
         await q.message.reply_text(f"/editproduct {cat_id} | {idx} | {p['name']} | {p['price']} | {p['desc']} | {opts}")
     elif d.startswith("approve_"):
         if not is_admin(uid): return
@@ -388,7 +426,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     prod = load_json(cat["file"], [])[o.get("product_idx",0)] if o.get("product_idx") is not None else {"name": o["product"]}
                     await q.edit_message_text(f"Approved {order_id}")
                     try:
-                        complete_msg = get_order_complete_message(order_id, o.get("username","no_username"), o["user_id"], prod['name'], o.get("selected_option",""))
+                        price = o.get("selected_price") or o.get("price")
+                        complete_msg = get_order_complete_message(order_id, o.get("username","no_username"), o["user_id"], prod['name'], o.get("selected_option",""), price)
                         await context.bot.send_message(chat_id=o["user_id"], text=complete_msg)
                     except:
                         pass
@@ -413,10 +452,9 @@ async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         raw = update.message.text.split(" ", 1)[1]
         parts = [x.strip() for x in raw.split("|")]
-        # Format: cat | Name | Price | Desc | Small, Medium, Large
         if len(parts) == 5:
             cat_id, name, price, desc, opts_raw = parts[0].lower(), parts[1], parts[2], parts[3], parts[4]
-            options = [o.strip() for o in opts_raw.split(",") if o.strip()]
+            options = parse_options_string(opts_raw)
         elif len(parts) == 4:
             cat_id, name, price, desc = parts[0].lower(), parts[1], parts[2], parts[3]
             options = []
@@ -435,7 +473,7 @@ async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_json(cat["file"], prods)
         await context.bot.send_message(chat_id=ADMIN_ID, text=f"Saved {name} to {cat['name']} - Options: {options} - Total {len(prods)}")
     except Exception as e:
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use: /addproduct cat | Name | Price | Desc | Small, Medium, Large - Error: {e}")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use: /addproduct cat | Name | Price | Desc | Small:9.50, Medium:10.50 - Error: {e}")
 
 async def add_options_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
@@ -447,14 +485,14 @@ async def add_options_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         raw = update.message.text.split(" ", 1)[1]
         cat_id, idx, opts_raw = [x.strip() for x in raw.split("|", 2)]
         idx = int(idx)
-        options = [o.strip() for o in opts_raw.split(",") if o.strip()]
+        options = parse_options_string(opts_raw)
         cat = get_cat_by_id(cat_id.lower())
         prods = load_json(cat["file"], [])
         prods[idx]["options"] = options
         save_json(cat["file"], prods)
         await context.bot.send_message(chat_id=ADMIN_ID, text=f"Added options to {prods[idx]['name']}: {options}")
     except Exception as e:
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use: /addoptions shop_tees | 0 | Small, Medium, Large - {e}")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use: /addoptions shop_tees | 0 | Small:9.50, Medium:10.50 - {e}")
 
 async def edit_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
@@ -467,7 +505,7 @@ async def edit_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = [x.strip() for x in raw.split("|")]
         if len(parts) == 6:
             cat_id, idx, name, price, desc, opts_raw = parts[0].lower(), int(parts[1]), parts[2], parts[3], parts[4], parts[5]
-            options = [o.strip() for o in opts_raw.split(",") if o.strip()]
+            options = parse_options_string(opts_raw)
         else:
             cat_id, idx, name, price, desc = parts[0].lower(), int(parts[1]), parts[2], parts[3], parts[4]
             options = None
@@ -478,14 +516,13 @@ async def edit_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if options:
                 new_data["options"] = options
         else:
-            # keep old options if not provided
             if "options" in prods[idx]:
                 new_data["options"] = prods[idx]["options"]
         prods[idx] = new_data
         save_json(cat["file"], prods)
         await context.bot.send_message(chat_id=ADMIN_ID, text=f"Edited #{idx} to {name} Options: {new_data.get('options',[])}")
     except Exception as e:
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use: /editproduct cat | idx | Name | Price | Desc | Small, Medium - {e}")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use: /editproduct cat | idx | Name | Price | Desc | Small:9.50, Medium:10.50 - {e}")
 
 async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
