@@ -21,10 +21,9 @@ DEFAULT_CATEGORIES = [
     {"id": "shop_low", "name": "⬇️SHOP LOW % SNIFF [Med-Low Bal]", "file": "products_low.json"},
     {"id": "shop_high", "name": "⬆️SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"},
     {"id": "shop_tees", "name": "🥊Shop Accounts", "file": "products_tees.json"},
-    {"id": "shop_accessories", "name": "🥇Shop BINs", "file": "products_accessories.json"},
-    {"id": "shop_food", "name": "🥙Shop Food", "file": "products_food.json"}
+    {"id": "shop_food", "name": "🥙Shop Food", "file": "products_food.json"},
+    {"id": "shop_accessories", "name": "🥇Shop BINs", "file": "products_accessories.json"}
 ]
-# FOOD BEFORE ACCESSORIES - FIXED
 MAIN_MENU_ORDER = ["shop", "shop_tees", "shop_food", "shop_accessories"]
 
 def gh_headers():
@@ -61,9 +60,21 @@ def save_json(path,data):
     except: return False
 def get_categories():
     cats=load_json(CATEGORIES_FILE, DEFAULT_CATEGORIES)
-    save_json(CATEGORIES_FILE,cats)
+    # FORCE FIX: ensure shop_high exists
+    ids=[c["id"] for c in cats]
+    if "shop_high" not in ids:
+        cats.append({"id": "shop_high", "name": "SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"})
+        save_json(CATEGORIES_FILE,cats)
+    if "shop_low" not in ids:
+        cats.append({"id": "shop_low", "name": "SHOP LOW % SNIFF [Med-Low Bal]", "file": "products_low.json"})
+        save_json(CATEGORIES_FILE,cats)
     return cats
 def get_cat_by_id(cat_id):
+    # HARD CODED FALLBACK FOR HIGH/LOW
+    if cat_id=="shop_high":
+        return {"id": "shop_high", "name": "SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"}
+    if cat_id=="shop_low":
+        return {"id": "shop_low", "name": "SHOP LOW % SNIFF [Med-Low Bal]", "file": "products_low.json"}
     for c in get_categories():
         if c["id"]==cat_id: return c
     return None
@@ -168,7 +179,7 @@ def is_url(s):
 
 app=Flask(__name__)
 @app.route("/")
-def home(): return "LIVE - SAINTLOCK FOOD BEFORE ACCESSORIES"
+def home(): return "LIVE - SHOP HIGH FIXED"
 def run_web(): app.run(host="0.0.0.0",port=int(os.environ.get("PORT",10000)))
 def is_admin(uid): return uid==ADMIN_ID
 async def post_init(app): await app.bot.set_my_commands([BotCommand("start","Open Shop Menu")])
@@ -198,23 +209,26 @@ async def show_balance(q,uid):
     await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb))
 
 async def show_category(q,cat_id,is_admin_view=False):
-    cat=get_cat_by_id(cat_id)
-    if not cat:
-        await q.edit_message_text(f"Category {cat_id} not found. Try /saveall", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
-        return
-    products=load_json(cat["file"],[])
-    if not products:
-        await q.edit_message_text(f"🔴 {cat['name']} is empty - add products with /addproduct {cat_id} | name | price | desc", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
-        return
-    kb=[]
-    for i,p in enumerate(products):
-        prices = [float(p["price"])]
-        for o in p.get("options",[]):
-            if o.get("price") is not None: prices.append(float(o["price"]))
-        from_price = min(prices) if prices else float(p["price"])
-        kb.append([InlineKeyboardButton(f"{p['name']} - From ${from_price:.2f}",callback_data=f"view_{cat_id}_{i}")])
-    kb.append([InlineKeyboardButton("Back",callback_data="back")])
-    await q.edit_message_text(f"⚫ *{cat['name']}* - {len(products)} items", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+    try:
+        cat=get_cat_by_id(cat_id)
+        if not cat:
+            await q.edit_message_text(f"❌ Category {cat_id} not found. Run /saveall then try again.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
+            return
+        products=load_json(cat["file"],[])
+        if not products:
+            await q.edit_message_text(f"🔴 {cat['name']} is empty\nAdd products:\n/addproduct {cat_id} | name | price | desc", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
+            return
+        kb=[]
+        for i,p in enumerate(products):
+            prices = [float(p["price"])]
+            for o in p.get("options",[]):
+                if o.get("price") is not None: prices.append(float(o["price"]))
+            from_price = min(prices) if prices else float(p["price"])
+            kb.append([InlineKeyboardButton(f"{p['name']} - From ${from_price:.2f}",callback_data=f"view_{cat_id}_{i}")])
+        kb.append([InlineKeyboardButton("Back",callback_data="back")])
+        await q.edit_message_text(f"⚫ *{cat['name']}* - {len(products)} items", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+    except Exception as e:
+        await q.edit_message_text(f"Error in {cat_id}: {e}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
 
 async def show_cart(q,uid):
     cart=get_cart(uid)
@@ -232,14 +246,22 @@ async def show_cart(q,uid):
     await q.edit_message_text(txt, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q=update.callback_query; await q.answer(); d=q.data; uid=q.from_user.id; username=q.from_user.username or "no_username"
+    q=update.callback_query
+    try: await q.answer()
+    except: pass
+    d=q.data; uid=q.from_user.id; username=q.from_user.username or "no_username"
+    # --- FIXED ORDER: CHECK HIGH/LOW FIRST ---
     if d=="cat_shop_low":
         await show_category(q,"shop_low", is_admin_view=is_admin(uid)); return
     if d=="cat_shop_high":
         await show_category(q,"shop_high", is_admin_view=is_admin(uid)); return
     if d=="cat_shop":
         kb=[[InlineKeyboardButton("SHOP LOW %",callback_data="cat_shop_low")],[InlineKeyboardButton("SHOP HIGH %",callback_data="cat_shop_high")],[InlineKeyboardButton("Back",callback_data="back")]]
-        await q.edit_message_text("💳 Shop CC - Choose Type:", reply_markup=InlineKeyboardMarkup(kb)); return
+        try:
+            await q.edit_message_text("💳 Shop CC - Choose Type:", reply_markup=InlineKeyboardMarkup(kb))
+        except Exception as e:
+            await q.message.reply_text("💳 Shop CC - Choose Type:", reply_markup=InlineKeyboardMarkup(kb))
+        return
     if d.startswith("cat_"):
         await show_category(q,d.replace("cat_",""), is_admin_view=is_admin(uid)); return
     if d=="back":
@@ -412,8 +434,7 @@ async def send_product_view(q,cat_id,idx,context,uid,added=False):
             try: await q.delete()
             except: pass
             return
-        except:
-            pass
+        except: pass
     try: await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
     except: await q.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
 
