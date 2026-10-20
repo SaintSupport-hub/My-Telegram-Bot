@@ -1,4 +1,4 @@
-mport os, json, threading, base64, requests, random, string, io, time, re
+import os, json, threading, base64, requests, random, string, io, time, re
 from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
@@ -18,12 +18,12 @@ ORDERS_FILE = "orders.json"
 USERS_FILE = "users.json"
 
 DEFAULT_CATEGORIES = [
-    {"id": "shop", "name": "🛒Shop CC", "file": "products.json"},
-    {"id": "shop_low", "name": "⬇️SHOP LOW % SNIFF [Med-Low Bal]", "file": "products_low.json"},
-    {"id": "shop_high", "name": "⬆️SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"},
-    {"id": "shop_tees", "name": "🥊Shop BINs", "file": "products_tees.json"},
+    {"id": "shop", "name": "Shop CC", "file": "products.json"},
+    {"id": "shop_low", "name": "SHOP LOW % SNIFF [Med-Low Bal]", "file": "products_low.json"},
+    {"id": "shop_high", "name": "SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"},
+    {"id": "shop_tees", "name": "Shop Tees", "file": "products_tees.json"},
     {"id": "shop_accessories", "name": "Shop Accessories", "file": "products_accessories.json"},
-    {"id": "shop_food", "name": "🥙Shop Food", "file": "products_food.json"}
+    {"id": "shop_food", "name": "Shop Food", "file": "products_food.json"}
 ]
 
 MAIN_MENU_IDS = ["shop", "shop_tees", "shop_accessories", "shop_food"]
@@ -185,7 +185,6 @@ def parse_options_string(opts_raw):
             price_part = price_part.replace("$","").strip()
             try:
                 price = float(price_part)
-                # If name part looks like just a number (for min/max) skip, this is options not qty
                 if name_part.strip().replace(" ","").replace("-","").replace(":","").isdigit():
                     continue
                 result.append({"name": name_part.strip(), "price": price})
@@ -201,43 +200,38 @@ def parse_options_string(opts_raw):
                 continue
             except:
                 pass
-        # skip if it's a qty string like 5:50
         if re.match(r"^\d+\s*[:\-]\s*\d+$", part) or part.isdigit():
             continue
         result.append({"name": part.strip(), "price": None})
     return result
 
 def parse_minmax_string(s):
-    # Accepts "5", "5:20", "5-20", "5:50"
     s = s.strip()
     if not s:
-        return 1, 100
-    # Remove spaces
+        return 1, 999
     s = s.replace(" ", "")
     if ":" in s:
         a,b = s.split(":",1)
         try:
             return int(float(a)), int(float(b))
         except:
-            return 1,100
+            return 1,999
     if "-" in s:
         a,b = s.split("-",1)
         try:
             return int(float(a)), int(float(b))
         except:
-            return 1,100
-    # Single number = min
+            return 1,999
     try:
         min_q = int(float(s))
         return min_q, 999
     except:
-        return 1,100
+        return 1,999
 
 def is_minmax_string(s):
     s = s.strip()
     if not s:
         return False
-    # Pure minmax like 5, 5:20, 5-20
     if re.match(r"^\d+$", s):
         return True
     if re.match(r"^\d+\s*[:\-]\s*\d+$", s):
@@ -283,7 +277,6 @@ async def show_category(q, cat_id, is_admin_view=False):
     for i, p in enumerate(products):
         opts = p.get("options", [])
         min_q = p.get("min_qty",1)
-        max_q = p.get("max_qty",999)
         qty_info = f" Min:{min_q}" if min_q > 1 else ""
         opts_text = f" ({len(opts)} opts)" if opts else ""
         kb.append([InlineKeyboardButton(f"{p['name']} - ${p['price']}{opts_text}{qty_info}", callback_data=f"view_{cat_id}_{i}")])
@@ -393,7 +386,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for o in normalized:
                 price_show = f" ${o['price']:.2f}" if o.get("price") is not None else ""
                 kb.append([InlineKeyboardButton(f"{o['name']}{price_show}", callback_data=f"selopt_{order_id}_{o['name']}")])
-        # Quantity buttons
         kb.append([
             InlineKeyboardButton("➖", callback_data=f"qtyminus_{order_id}"),
             InlineKeyboardButton(f"Qty: {initial_qty}", callback_data=f"qtyinfo_{order_id}"),
@@ -452,7 +444,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         return
                 o["quantity"] = qty
                 save_json(ORDERS_FILE, orders)
-                await send_quantity_view(q, o, prod, uid, edit=False)
+                await send_quantity_view(q, o, prod, uid)
                 break
 
     elif d.startswith("paybal_"):
@@ -558,7 +550,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await q.edit_message_text(f"Declined {order_id}")
                 break
 
-async def send_quantity_view(q, order, prod, uid, edit=False):
+async def send_quantity_view(q, order, prod, uid):
     bal = get_user(uid).get("balance", 0)
     unit = float(order.get("selected_price") or order.get("price"))
     qty = int(order.get("quantity", order.get("min_qty",1)))
@@ -593,7 +585,6 @@ async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=ADMIN_ID, text=f"❌ Use pipes | \n\nCorrect:\n/addproduct shop_low | Shirt | 2 | Nice\n/addproduct shop_low | Shirt | 2 | Nice | Small, Medium\n/addproduct shop_low | Shirt | 2 | Nice | Small:2 | 5:50\n/addproduct shop_low | Shirt | 2 | Nice | 5:50")
             return
         parts = [x.strip() for x in raw.split("|")]
-        # Format: cat | Name | Price | Desc | [Options] | [Min:Max]
         cat_id = parts[0].lower()
         name = parts[1] if len(parts) > 1 else ""
         price = parts[2] if len(parts) > 2 else "0"
@@ -601,7 +592,6 @@ async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
         options_raw = ""
         minmax_raw = ""
         if len(parts) == 5:
-            # Could be options or minmax
             if is_minmax_string(parts[4]):
                 minmax_raw = parts[4]
             else:
@@ -691,8 +681,6 @@ async def edit_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 minmax_raw = options_raw
             else:
                 new_data["options"] = parse_options_string(options_raw)
-                if "options" not in new_data and "options" in old:
-                    new_data["options"] = old["options"]
         else:
             if "options" in old:
                 new_data["options"] = old["options"]
