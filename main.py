@@ -29,7 +29,7 @@ DEFAULT_CATEGORIES = [
 MAIN_MENU_IDS = ["shop", "shop_tees", "shop_accessories", "shop_food"]
 
 def gh_headers():
-    return {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd. 【entity-github¦canonical_name=GitHub】.v3+json"}
+    return {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd. github.v3+json"}
 
 def load_json(path, default):
     local = None
@@ -57,7 +57,6 @@ def load_json(path, default):
             json.dump(merged, f, indent=2)
         return merged
     if path == CATEGORIES_FILE and local and gh:
-        # Merge and fix files
         final = []
         seen = set()
         for src in [gh, local, DEFAULT_CATEGORIES]:
@@ -65,7 +64,6 @@ def load_json(path, default):
                 if c["id"] not in seen:
                     final.append(c)
                     seen.add(c["id"])
-        # Force correct files for low/high
         for c in final:
             if c["id"] == "shop_low":
                 c["file"] = "products_low.json"
@@ -104,7 +102,6 @@ def get_categories():
     for dc in DEFAULT_CATEGORIES:
         if not any(c["id"] == dc["id"] for c in cats):
             cats.append(dc)
-    # FIX: force correct filenames
     for c in cats:
         if c["id"] == "shop_low":
             c["file"] = "products_low.json"
@@ -484,7 +481,10 @@ async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
     try:
-        raw = update.message.text.split(" ", 1)[1]
+        raw = update.message.text.split(" ", 1)[1] if " " in update.message.text else ""
+        if "|" not in raw:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"❌ Use pipes | \n\nCorrect:\n/addproduct shop_low | P.F Changs | 15 | Desc\n\nYou typed: {raw}\nIt saved as product named '{raw}' to Shop CC - that's why shop_low was empty!")
+            return
         parts = [x.strip() for x in raw.split("|")]
         if len(parts) == 5:
             cat_id, name, price, desc, opts_raw = parts[0].lower(), parts[1], parts[2], parts[3], parts[4]
@@ -505,9 +505,9 @@ async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
             new_prod["options"] = options
         prods.append(new_prod)
         save_json(cat["file"], prods)
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Saved {name} to {cat['name']} ({cat['file']}) - Options: {options} - Total {len(prods)}")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"✅ Saved '{name}' to {cat['name']} ({cat['file']}) - Options: {options} - Total {len(prods)}")
     except Exception as e:
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use: /addproduct cat | Name | Price | Desc | Small:9.50 - Error: {e}")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use: /addproduct shop_low | Name | Price | Desc | Small:9.50 - Error: {e}")
 
 async def add_options_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
@@ -573,6 +573,24 @@ async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     txt = "\n".join([f"{i}: {p['name']} - ${p['price']} Options: {p.get('options',[])}" for i, p in enumerate(prods)])
     await context.bot.send_message(chat_id=ADMIN_ID, text=f"{cat['name']} ({cat['file']}) {len(prods)} items:\n{txt[:3500]}")
 
+async def migrate_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    # Move any products named shop_low/shop_high out of products.json
+    prods_main = load_json("products.json", [])
+    prods_low = load_json("products_low.json", [])
+    prods_high = load_json("products_high.json", [])
+    moved = 0
+    new_main = []
+    for p in prods_main:
+        name_low = p["name"].lower()
+        if name_low == "shop_low" or name_low.startswith("shop_low "):
+            # skip this broken entry
+            moved += 1
+            continue
+        new_main.append(p)
+    save_json("products.json", new_main)
+    await context.bot.send_message(chat_id=ADMIN_ID, text=f"Migrated/cleaned {moved} broken entries from Shop CC. Now add products correctly with pipes.")
+
 async def add_balance_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
     try:
@@ -594,6 +612,7 @@ def run_bot():
     b.add_handler(CommandHandler("addoptions", add_options_cmd))
     b.add_handler(CommandHandler("editproduct", edit_product))
     b.add_handler(CommandHandler("listproducts", list_products))
+    b.add_handler(CommandHandler("migrate", migrate_products))
     b.add_handler(CommandHandler("addbalance", add_balance_cmd))
     b.add_handler(CallbackQueryHandler(button_handler))
     b.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u,c: None))
