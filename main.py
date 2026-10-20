@@ -26,6 +26,15 @@ DEFAULT_CATEGORIES = [
 ]
 MAIN_MENU_ORDER = ["shop", "shop_tees", "shop_food", "shop_accessories"]
 
+def safe_float(v, default=0.0):
+    try:
+        s=str(v).replace("$","").strip()
+        # take first number found
+        m=re.search(r"[\d\.]+", s)
+        if m: return float(m.group())
+        return float(s)
+    except: return default
+
 def gh_headers():
     return {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json"}
 def load_json(path, default):
@@ -60,17 +69,12 @@ def save_json(path,data):
     except: return False
 def get_categories():
     cats=load_json(CATEGORIES_FILE, DEFAULT_CATEGORIES)
-    # FORCE FIX: ensure shop_high exists
     ids=[c["id"] for c in cats]
     if "shop_high" not in ids:
         cats.append({"id": "shop_high", "name": "SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"})
         save_json(CATEGORIES_FILE,cats)
-    if "shop_low" not in ids:
-        cats.append({"id": "shop_low", "name": "SHOP LOW % SNIFF [Med-Low Bal]", "file": "products_low.json"})
-        save_json(CATEGORIES_FILE,cats)
     return cats
 def get_cat_by_id(cat_id):
-    # HARD CODED FALLBACK FOR HIGH/LOW
     if cat_id=="shop_high":
         return {"id": "shop_high", "name": "SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"}
     if cat_id=="shop_low":
@@ -129,7 +133,7 @@ def keep_alive_loop():
         except: pass
 def get_cart(uid): return load_json(CARTS_FILE,{}).get(str(uid),[])
 def get_cart_total(uid):
-    cart=get_cart(uid); total=sum(float(it.get("total",0)) for it in cart); return total,len(cart)
+    cart=get_cart(uid); total=sum(safe_float(it.get("total",0)) for it in cart); return total,len(cart)
 def add_to_cart(uid,item):
     carts=load_json(CARTS_FILE,{}); s=str(uid)
     if s not in carts: carts[s]=[]
@@ -179,7 +183,7 @@ def is_url(s):
 
 app=Flask(__name__)
 @app.route("/")
-def home(): return "LIVE - SHOP HIGH FIXED"
+def home(): return "LIVE - SHOP HIGH CRASH FIX"
 def run_web(): app.run(host="0.0.0.0",port=int(os.environ.get("PORT",10000)))
 def is_admin(uid): return uid==ADMIN_ID
 async def post_init(app): await app.bot.set_my_commands([BotCommand("start","Open Shop Menu")])
@@ -212,19 +216,20 @@ async def show_category(q,cat_id,is_admin_view=False):
     try:
         cat=get_cat_by_id(cat_id)
         if not cat:
-            await q.edit_message_text(f"❌ Category {cat_id} not found. Run /saveall then try again.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
+            await q.edit_message_text(f"❌ Category {cat_id} not found.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
             return
         products=load_json(cat["file"],[])
         if not products:
-            await q.edit_message_text(f"🔴 {cat['name']} is empty\nAdd products:\n/addproduct {cat_id} | name | price | desc", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
+            await q.edit_message_text(f"🔴 {cat['name']} is empty", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
             return
         kb=[]
         for i,p in enumerate(products):
-            prices = [float(p["price"])]
+            fp=safe_float(p.get("price",0))
             for o in p.get("options",[]):
-                if o.get("price") is not None: prices.append(float(o["price"]))
-            from_price = min(prices) if prices else float(p["price"])
-            kb.append([InlineKeyboardButton(f"{p['name']} - From ${from_price:.2f}",callback_data=f"view_{cat_id}_{i}")])
+                if o.get("price") is not None:
+                    fv=safe_float(o.get("price"), fp)
+                    if fv < fp or fp==0: fp=fv
+            kb.append([InlineKeyboardButton(f"{p['name']} - From ${fp:.2f}",callback_data=f"view_{cat_id}_{i}")])
         kb.append([InlineKeyboardButton("Back",callback_data="back")])
         await q.edit_message_text(f"⚫ *{cat['name']}* - {len(products)} items", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
     except Exception as e:
@@ -235,8 +240,8 @@ async def show_cart(q,uid):
     if not cart:
         await q.edit_message_text("🛒 Cart is empty.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
         return
-    total=sum(float(it.get("total",0)) for it in cart)
-    lines=[f"{idx+1}. {it['name']} {it.get('option','')} x{it['qty']} = ${it['total']:.2f}" for idx,it in enumerate(cart)]
+    total=sum(safe_float(it.get("total",0)) for it in cart)
+    lines=[f"{idx+1}. {it['name']} {it.get('option','')} x{it['qty']} = ${safe_float(it['total']):.2f}" for idx,it in enumerate(cart)]
     txt="🛒 *Your Cart*\n\n"+"\n".join(lines)+f"\n\n*Total: ${total:.2f}*"
     kb=[[InlineKeyboardButton(f"❌ {idx+1}",callback_data=f"cartdel_{idx}") ] for idx in range(len(cart))]
     kb.append([InlineKeyboardButton("Clear",callback_data="cartclear")])
@@ -250,17 +255,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try: await q.answer()
     except: pass
     d=q.data; uid=q.from_user.id; username=q.from_user.username or "no_username"
-    # --- FIXED ORDER: CHECK HIGH/LOW FIRST ---
     if d=="cat_shop_low":
         await show_category(q,"shop_low", is_admin_view=is_admin(uid)); return
     if d=="cat_shop_high":
         await show_category(q,"shop_high", is_admin_view=is_admin(uid)); return
     if d=="cat_shop":
         kb=[[InlineKeyboardButton("SHOP LOW %",callback_data="cat_shop_low")],[InlineKeyboardButton("SHOP HIGH %",callback_data="cat_shop_high")],[InlineKeyboardButton("Back",callback_data="back")]]
-        try:
-            await q.edit_message_text("💳 Shop CC - Choose Type:", reply_markup=InlineKeyboardMarkup(kb))
-        except Exception as e:
-            await q.message.reply_text("💳 Shop CC - Choose Type:", reply_markup=InlineKeyboardMarkup(kb))
+        try: await q.edit_message_text("💳 Shop CC - Choose Type:", reply_markup=InlineKeyboardMarkup(kb))
+        except: await q.message.reply_text("💳 Shop CC - Choose Type:", reply_markup=InlineKeyboardMarkup(kb))
         return
     if d.startswith("cat_"):
         await show_category(q,d.replace("cat_",""), is_admin_view=is_admin(uid)); return
@@ -303,8 +305,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if d.startswith("cartpay_"):
         method=d.replace("cartpay_",""); cart=get_cart(uid)
         if not cart: await q.edit_message_text("Cart empty"); return
-        total=sum(float(it.get("total",0)) for it in cart); order_id=gen_id()
-        orders=load_json(ORDERS_FILE,[]); item_list="\n".join([f"- {it['name']} {it.get('option','')} x{it['qty']} = ${it['total']:.2f}" for it in cart])
+        total=sum(safe_float(it.get("total",0)) for it in cart); order_id=gen_id()
+        orders=load_json(ORDERS_FILE,[]); item_list="\n".join([f"- {it['name']} {it.get('option','')} x{it['qty']} = ${safe_float(it['total']):.2f}" for it in cart])
         orders.append({"order_id":order_id,"user_id":uid,"username":username,"product":f"CART {len(cart)} items","price":total,"method":method,"status":"pending","items":cart,"total":total}); save_json(ORDERS_FILE,orders)
         if method=="bal":
             if get_user(uid).get("balance",0)<total: await q.message.reply_text(f"Need ${total:.2f}"); return
@@ -320,7 +322,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts=d.replace("view_","").rsplit("_",1); cat_id=parts[0]; idx=int(parts[1])
         cat=get_cat_by_id(cat_id); p=load_json(cat["file"],[])[idx]
         context.user_data[f"qty_{cat_id}_{idx}"]=int(p.get("min_qty",1))
-        context.user_data[f"opt_{cat_id}_{idx}"]=""; context.user_data[f"optprice_{cat_id}_{idx}"]=float(p["price"])
+        context.user_data[f"opt_{cat_id}_{idx}"]=""; context.user_data[f"optprice_{cat_id}_{idx}"]=safe_float(p.get("price",0))
         context.user_data[f"optmin_{cat_id}_{idx}"]=p.get("min_qty")
         context.user_data[f"optmax_{cat_id}_{idx}"]=p.get("max_qty")
         await send_product_view(q,cat_id,idx,context,uid); return
@@ -330,7 +332,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         opt_obj=None
         for o in prod.get("options",[]):
             if o["name"]==opt_name: opt_obj=o; break
-        price=float(prod["price"]) if not opt_obj or opt_obj.get("price") is None else float(opt_obj["price"])
+        price=safe_float(prod.get("price",0)) if not opt_obj or opt_obj.get("price") is None else safe_float(opt_obj.get("price",0))
         min_q = opt_obj.get("min_qty") if opt_obj and opt_obj.get("min_qty") is not None else int(prod.get("min_qty",1))
         context.user_data[f"opt_{cat_id}_{idx}"]=opt_name
         context.user_data[f"optprice_{cat_id}_{idx}"]=price
@@ -361,14 +363,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         rest=d.replace("addcart_",""); cat_id,idx_str=rest.rsplit("|",1); idx=int(idx_str)
         cat=get_cat_by_id(cat_id); prod=load_json(cat["file"],[])[idx]
         qty=int(context.user_data.get(f"qty_{cat_id}_{idx}", int(prod.get("min_qty",1))))
-        opt=context.user_data.get(f"opt_{cat_id}_{idx}",""); unit=float(context.user_data.get(f"optprice_{cat_id}_{idx}", float(prod["price"]))); total=unit*qty
+        opt=context.user_data.get(f"opt_{cat_id}_{idx}",""); unit=safe_float(context.user_data.get(f"optprice_{cat_id}_{idx}", safe_float(prod.get("price",0)))); total=unit*qty
         item={"name":prod["name"],"category":cat_id,"product_idx":idx,"option":opt,"unit_price":unit,"qty":qty,"total":total}
         count=add_to_cart(uid,item); await q.answer(f"Added! 🛒 {count}"); await send_product_view(q,cat_id,idx,context,uid,added=True); return
     if d.startswith("buynow_"):
         rest=d.replace("buynow_",""); cat_id,idx_str=rest.rsplit("|",1); idx=int(idx_str)
         cat=get_cat_by_id(cat_id); prod=load_json(cat["file"],[])[idx]
         qty=int(context.user_data.get(f"qty_{cat_id}_{idx}", int(prod.get("min_qty",1))))
-        opt=context.user_data.get(f"opt_{cat_id}_{idx}",""); unit=float(context.user_data.get(f"optprice_{cat_id}_{idx}", float(prod["price"]))); total=unit*qty; order_id=gen_id()
+        opt=context.user_data.get(f"opt_{cat_id}_{idx}",""); unit=safe_float(context.user_data.get(f"optprice_{cat_id}_{idx}", safe_float(prod.get("price",0)))); total=unit*qty; order_id=gen_id()
         orders=load_json(ORDERS_FILE,[]); orders.append({"order_id":order_id,"user_id":uid,"username":username,"product":prod["name"],"price":unit,"quantity":qty,"total":total,"selected_option":opt,"selected_price":unit,"category":cat_id,"product_idx":idx,"method":"buynow","status":"pending"}); save_json(ORDERS_FILE,orders)
         txt=f"*{prod['name']}* {opt} x{qty} = *${total:.2f}* Order `{order_id}`"
         kb=[[InlineKeyboardButton(f"${total:.2f} Pay",callback_data=f"paybalnow_{order_id}")],[InlineKeyboardButton(f"BTC",callback_data=f"paybtcnow_{order_id}"),InlineKeyboardButton(f"Cash",callback_data=f"paycashnow_{order_id}")],[InlineKeyboardButton("Back",callback_data=f"cat_{cat_id}")]]
@@ -378,7 +380,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         orders=load_json(ORDERS_FILE,[])
         for o in orders:
             if o["order_id"]==order_id:
-                total=float(o.get("total",0))
+                total=safe_float(o.get("total",0))
                 if method=="bal":
                     if get_user(uid).get("balance",0)<total: await q.message.reply_text(f"Need ${total:.2f}"); return
                     new_bal=deduct_balance(uid,total); o["status"]="approved"; save_json(ORDERS_FILE,orders)
@@ -394,18 +396,17 @@ async def send_product_view(q,cat_id,idx,context,uid,added=False):
     min_q=int(prod.get("min_qty",1)); max_q=int(prod.get("max_qty",999))
     qty=int(context.user_data.get(f"qty_{cat_id}_{idx}",min_q))
     opt=context.user_data.get(f"opt_{cat_id}_{idx}","")
-    unit=float(context.user_data.get(f"optprice_{cat_id}_{idx}", float(prod["price"])))
+    unit=safe_float(context.user_data.get(f"optprice_{cat_id}_{idx}", safe_float(prod.get("price",0))))
     opt_min=context.user_data.get(f"optmin_{cat_id}_{idx}")
     opt_max=context.user_data.get(f"optmax_{cat_id}_{idx}")
     opt_stock=context.user_data.get(f"optstock_{cat_id}_{idx}")
     cur_min = int(opt_min) if opt_min is not None else min_q
     cur_max = int(opt_max) if opt_max is not None else max_q
     if opt_stock is not None: cur_max = min(cur_max, int(opt_stock))
-    all_prices = [float(prod["price"])]
+    all_prices=[safe_float(prod.get("price",0))]
     for o in prod.get("options",[]):
-        if o.get("price") is not None:
-            all_prices.append(float(o["price"]))
-    from_price = min(all_prices) if all_prices else unit
+        if o.get("price") is not None: all_prices.append(safe_float(o.get("price"),0))
+    from_price=min([p for p in all_prices if p>0] or [0])
     total=unit*qty
     options=prod.get("options",[])
     if options and not opt:
@@ -420,7 +421,7 @@ async def send_product_view(q,cat_id,idx,context,uid,added=False):
     kb=[]
     if options:
         for o in options:
-            price_show=f" ${o['price']:.2f}" if o.get("price") is not None else ""
+            price_show=f" ${safe_float(o.get('price',0)):.2f}" if o.get("price") is not None else ""
             min_show=f" Min:{o.get('min_qty')}" if o.get('min_qty') is not None else ""
             kb.append([InlineKeyboardButton(f"{o['name']}{price_show}{min_show}", callback_data=f"seloptview_{cat_id}|{idx}|{o['name']}")])
     kb.append([InlineKeyboardButton("➖",callback_data=f"qtyviewminus_{cat_id}|{idx}"), InlineKeyboardButton(f"{qty}",callback_data="noop"), InlineKeyboardButton("➕",callback_data=f"qtyviewplus_{cat_id}|{idx}")])
@@ -525,7 +526,7 @@ async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try: await update.message.delete()
     except: pass
     cat_id=update.message.text.split(" ",1)[1].strip().lower() if len(update.message.text.split())>1 else "shop_low"
-    cat=get_cat_by_id(cat_id); prods=load_json(cat["file"],[]); txt="\n".join([f"{i}: {p['name']} - From ${p['price']} {'[IMG]' if p.get('image') else ''}" for i,p in enumerate(prods)])
+    cat=get_cat_by_id(cat_id); prods=load_json(cat["file"],[]); txt="\n".join([f"{i}: {p['name']} - From ${safe_float(p.get('price',0)):.2f} {'[IMG]' if p.get('image') else ''}" for i,p in enumerate(prods)])
     await context.bot.send_message(chat_id=ADMIN_ID, text=f"{cat['name']} {len(prods)}:\n{txt[:3500]}")
 async def add_balance_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
