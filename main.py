@@ -17,26 +17,25 @@ USERS_FILE = "users.json"
 CARTS_FILE = "carts.json"
 
 DEFAULT_CATEGORIES = [
-    {"id": "shop", "name": "🛒Shop CC", "file": "products.json"},
-    {"id": "shop_low", "name": "⬇️SHOP LOW % SNIFF [Med-Low Bal]", "file": "products_low.json"},
-    {"id": "shop_high", "name": "⬆️SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"},
-    {"id": "shop_tees", "name": "🥊Shop Accounts", "file": "products_tees.json"},
-    {"id": "shop_food", "name": "🥙Shop Food", "file": "products_food.json"},
-    {"id": "shop_accessories", "name": "🥇Shop BINs", "file": "products_accessories.json"}
+    {"id": "shop", "name": "Shop CC", "file": "products.json"},
+    {"id": "shop_low", "name": "SHOP LOW % SNIFF [Med-Low Bal]", "file": "products_low.json"},
+    {"id": "shop_high", "name": "SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"},
+    {"id": "shop_tees", "name": "Shop Tees", "file": "products_tees.json"},
+    {"id": "shop_food", "name": "Shop Food", "file": "products_food.json"},
+    {"id": "shop_accessories", "name": "Shop Accessories", "file": "products_accessories.json"}
 ]
 MAIN_MENU_ORDER = ["shop", "shop_tees", "shop_food", "shop_accessories"]
 
 def safe_float(v, default=0.0):
     try:
         s=str(v).replace("$","").strip()
-        # take first number found
         m=re.search(r"[\d\.]+", s)
         if m: return float(m.group())
         return float(s)
     except: return default
 
 def gh_headers():
-    return {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+    return {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.【entity-github¦canonical_name=GitHub】.v3+json"}
 def load_json(path, default):
     local=None
     if os.path.exists(path):
@@ -183,7 +182,7 @@ def is_url(s):
 
 app=Flask(__name__)
 @app.route("/")
-def home(): return "LIVE - SHOP HIGH CRASH FIX"
+def home(): return "LIVE - FULL FINAL WITH DEL"
 def run_web(): app.run(host="0.0.0.0",port=int(os.environ.get("PORT",10000)))
 def is_admin(uid): return uid==ADMIN_ID
 async def post_init(app): await app.bot.set_my_commands([BotCommand("start","Open Shop Menu")])
@@ -471,6 +470,22 @@ async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=ADMIN_ID, text=f"✅ Saved '{name}' From ${price} Min {min_q} Image: {'Yes' if image_url else 'No'} Options {len(options)}")
     except Exception as e: await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}")
 
+async def del_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    try:
+        raw=update.message.text.split(" ",1)[1]
+        cat_id, idx_str = [x.strip() for x in raw.split("|")]
+        idx=int(idx_str)
+        cat=get_cat_by_id(cat_id.lower())
+        prods=load_json(cat["file"],[])
+        removed=prods.pop(idx)
+        save_json(cat["file"],prods)
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"🗑️ Deleted #{idx}: {removed['name']} from {cat['name']}")
+    except Exception as e:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}\nUse /delproduct shop_high | 0")
+
 async def add_image_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
     try: await update.message.delete()
@@ -555,6 +570,7 @@ def run_bot():
     b=ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
     b.add_handler(CommandHandler("start",start))
     b.add_handler(CommandHandler("addproduct",add_product))
+    b.add_handler(CommandHandler("delproduct",del_product))
     b.add_handler(CommandHandler("addimage",add_image_cmd))
     b.add_handler(CommandHandler("addoptions",add_options_cmd))
     b.add_handler(CommandHandler("setquantity",set_quantity_cmd))
