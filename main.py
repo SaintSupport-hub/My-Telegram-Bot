@@ -9,8 +9,8 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or "0")
 SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "SaintSupport")
 BTC_WALLET = os.getenv("BTC_WALLET", "bc1q...")
 CASHAPP_TAG = os.getenv("CASHAPP_TAG", "$Saintlockecon")
-【entity-GITHUB_TOKEN¦canonical_name=GitHub】 = os.getenv("【entity-GITHUB_TOKEN¦canonical_name=GitHub】")
-【entity-GITHUB_REPO¦canonical_name=GitHub】 = os.getenv("【entity-GITHUB_REPO¦canonical_name=GitHub】", "SaintSupport-hub/My-Telegram-Bot")
+GH_TOKEN = os.getenv("GITHUB_"+"TOKEN")
+GH_REPO = os.getenv("GITHUB_"+"REPO", "SaintSupport-hub/My-Telegram-Bot")
 RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "")
 
 CATEGORIES_FILE = "categories.json"
@@ -19,18 +19,18 @@ USERS_FILE = "users.json"
 CARTS_FILE = "carts.json"
 
 DEFAULT_CATEGORIES = [
-    {"id": "shop", "name": "Shop CC", "file": "products.json"},
-    {"id": "shop_low", "name": "SHOP LOW % SNIFF [Med-Low Bal]", "file": "products_low.json"},
-    {"id": "shop_high", "name": "SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"},
-    {"id": "shop_tees", "name": "Shop Tees", "file": "products_tees.json"},
-    {"id": "shop_accessories", "name": "Shop Accessories", "file": "products_accessories.json"},
-    {"id": "shop_food", "name": "Shop Food", "file": "products_food.json"}
+    {"id": "shop", "name": "🛒Shop CC", "file": "products.json"},
+    {"id": "shop_low", "name": "⬇️SHOP LOW % SNIFF [Med-Low Bal]", "file": "products_low.json"},
+    {"id": "shop_high", "name": "⬆️SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"},
+    {"id": "shop_tees", "name": "🥊Shop Accounts", "file": "products_tees.json"},
+    {"id": "shop_accessories", "name": "🥇Shop BINs", "file": "products_accessories.json"},
+    {"id": "shop_food", "name": "🥙Shop Food", "file": "products_food.json"}
 ]
 
 MAIN_MENU_IDS = ["shop", "shop_tees", "shop_accessories", "shop_food"]
 
 def gh_headers():
-    return {"Authorization": f"token {【entity-GITHUB_TOKEN¦canonical_name=GitHub】}", "Accept": "application/vnd. 【entity-github¦canonical_name=GitHub】.v3+json"}
+    return {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json"}
 
 def load_json(path, default):
     local = None
@@ -41,9 +41,9 @@ def load_json(path, default):
         except:
             pass
     gh = None
-    if 【entity-GITHUB_TOKEN¦canonical_name=GitHub】:
+    if GH_TOKEN:
         try:
-            url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+            url = f"https://api.github.com/repos/{GH_REPO}/contents/{path}"
             r = requests.get(url, headers=gh_headers(), timeout=15)
             if r.status_code == 200:
                 gh = json.loads(base64.b64decode(r.json()["content"]).decode())
@@ -84,10 +84,10 @@ def load_json(path, default):
 def save_json(path, data):
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
-    if not GITHUB_TOKEN:
+    if not GH_TOKEN:
         return True
     try:
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+        url = f"https://api.github.com/repos/{GH_REPO}/contents/{path}"
         r = requests.get(url, headers=gh_headers())
         sha = r.json().get("sha") if r.status_code == 200 else None
         payload = {"message": f"Update {path}", "content": base64.b64encode(json.dumps(data, indent=2).encode()).decode()}
@@ -275,7 +275,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for c in cats:
         if c["id"] in MAIN_MENU_IDS:
             kb.append([InlineKeyboardButton(c["name"], callback_data=f"cat_{c['id']}")])
-    kb.append([InlineKeyboardButton(f"🛒 Cart ({count}) - ${total:.2f}" if count>0 else "🛒 Cart (0)", callback_data="viewcart")])
+    kb.append([InlineKeyboardButton(f"Cart ({count}) - ${total:.2f}" if count>0 else "Cart (0)", callback_data="viewcart")])
     kb.append([InlineKeyboardButton("Balance / Top Up", callback_data="balance")])
     kb.append([InlineKeyboardButton("SUPPORT", callback_data="support")])
     await update.message.reply_text("Welcome to SAINTLOCK CC", reply_markup=InlineKeyboardMarkup(kb))
@@ -311,17 +311,17 @@ async def show_cart(q, uid):
     bal = get_user(uid).get("balance", 0)
     if not cart:
         kb = [[InlineKeyboardButton("Back", callback_data="back")]]
-        await q.edit_message_text("🛒 Cart is empty.\nAdd items from shop first.", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+        await q.edit_message_text("Cart is empty.\nAdd items from shop first.", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
         return
     total = 0
     lines = []
     for idx, it in enumerate(cart):
         total += float(it.get("total",0))
         lines.append(f"{idx+1}. {it['name']} {it.get('option','')} x{it['qty']} = ${it['total']:.2f}")
-    txt = "🛒 *Your Cart:*\n\n" + "\n".join(lines) + f"\n\n*Total: ${total:.2f}*\nBalance: ${bal:.2f}"
+    txt = "Your Cart:\n\n" + "\n".join(lines) + f"\n\nTotal: ${total:.2f}\nBalance: ${bal:.2f}"
     kb = []
     for idx in range(len(cart)):
-        kb.append([InlineKeyboardButton(f"❌ Remove {idx+1}", callback_data=f"cartdel_{idx}")])
+        kb.append([InlineKeyboardButton(f"Remove {idx+1}", callback_data=f"cartdel_{idx}")])
     kb.append([InlineKeyboardButton("Clear Cart", callback_data="cartclear")])
     kb.append([InlineKeyboardButton(f"Pay ${total:.2f} with Balance (${bal:.2f})", callback_data="cartpay_bal")])
     kb.append([InlineKeyboardButton(f"Pay ${total:.2f} Bitcoin", callback_data="cartpay_btc")])
@@ -356,7 +356,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for c in cats:
             if c["id"] in MAIN_MENU_IDS:
                 kb.append([InlineKeyboardButton(c["name"], callback_data=f"cat_{c['id']}")])
-        kb.append([InlineKeyboardButton(f"🛒 Cart ({count}) - ${total:.2f}" if count>0 else "🛒 Cart (0)", callback_data="viewcart")])
+        kb.append([InlineKeyboardButton(f"Cart ({count}) - ${total:.2f}" if count>0 else "Cart (0)", callback_data="viewcart")])
         kb.append([InlineKeyboardButton("Balance / Top Up", callback_data="balance")])
         kb.append([InlineKeyboardButton("SUPPORT", callback_data="support")])
         await q.edit_message_text("Welcome to SAINTLOCK CC", reply_markup=InlineKeyboardMarkup(kb))
@@ -436,7 +436,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             new_bal = deduct_balance(uid, total)
             clear_cart(uid)
-            msg = f"✅ CART PURCHASE SUCCESSFUL!\n\nOrder #: {order_id}\nUser: @{username} ({uid})\nItems:\n{item_list}\n\nTotal Paid: ${total:.2f}\nNew Balance: ${new_bal:.2f}\n\nContact @Saintlocksupport with order #"
+            msg = f"CART PURCHASE SUCCESSFUL!\n\nOrder #: {order_id}\nUser: @{username} ({uid})\nItems:\n{item_list}\n\nTotal Paid: ${total:.2f}\nNew Balance: ${new_bal:.2f}\n\nContact @Saintlocksupport with order #"
             await q.message.reply_text(msg)
             try:
                 await context.bot.send_message(chat_id=ADMIN_ID, text=f"CART BALANCE PURCHASE\n{msg}")
@@ -444,14 +444,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         elif method == "btc":
             clear_cart(uid)
-            await q.message.reply_text(f"🛒 Order {order_id}\nTotal: ${total:.2f}\nItems:\n{item_list}\n\nBTC: `{BTC_WALLET}`\nNote: {order_id}", parse_mode="Markdown")
+            await q.message.reply_text(f"Order {order_id}\nTotal: ${total:.2f}\nItems:\n{item_list}\n\nBTC: {BTC_WALLET}\nNote: {order_id}", parse_mode="Markdown")
             try:
                 await context.bot.send_message(chat_id=ADMIN_ID, text=f"CART BTC ORDER {order_id}\nUser @{username} ({uid})\nTotal ${total:.2f}\n{item_list}")
             except:
                 pass
         else:
             clear_cart(uid)
-            await q.message.reply_text(f"🛒 Order {order_id}\nTotal: ${total:.2f}\nItems:\n{item_list}\n\nCashApp: `{CASHAPP_TAG}`\nNote: {order_id}", parse_mode="Markdown")
+            await q.message.reply_text(f"Order {order_id}\nTotal: ${total:.2f}\nItems:\n{item_list}\n\nCashApp: {CASHAPP_TAG}\nNote: {order_id}", parse_mode="Markdown")
             try:
                 await context.bot.send_message(chat_id=ADMIN_ID, text=f"CART CASHAPP ORDER {order_id}\nUser @{username} ({uid})\nTotal ${total:.2f}\n{item_list}")
             except:
@@ -557,7 +557,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         orders = load_json(ORDERS_FILE, [])
         orders.append({"order_id": order_id,"user_id": uid,"username": username,"product": prod["name"],"price": unit,"quantity": qty,"total": total,"selected_option": opt,"selected_price": unit,"category": cat_id,"product_idx": idx,"method": "buynow","status": "pending"})
         save_json(ORDERS_FILE, orders)
-        txt = f"*{prod['name']}*\nOpt: {opt}\nQty: {qty} x ${unit:.2f} = *${total:.2f}*\n\nOrder ID: `{order_id}`"
+        txt = f"{prod['name']}\nOpt: {opt}\nQty: {qty} x ${unit:.2f} = ${total:.2f}\n\nOrder ID: {order_id}"
         kb = [
             [InlineKeyboardButton(f"Pay ${total:.2f} with Balance (${bal:.2f})", callback_data=f"paybalnow_{order_id}")],
             [InlineKeyboardButton(f"Pay ${total:.2f} Bitcoin", callback_data=f"paybtcnow_{order_id}")],
@@ -582,7 +582,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     new_bal = deduct_balance(uid, total)
                     o["status"] = "approved_balance"
                     save_json(ORDERS_FILE, orders)
-                    await q.message.reply_text(f"✅ BUY NOW SUCCESS!\nOrder {order_id}\n{ o['product']} {o.get('selected_option','')} x{o.get('quantity',1)} = ${total:.2f}\nNew Bal ${new_bal:.2f}\nContact @Saintlocksupport")
+                    await q.message.reply_text(f"BUY NOW SUCCESS!\nOrder {order_id}\n{ o['product']} {o.get('selected_option','')} x{o.get('quantity',1)} = ${total:.2f}\nNew Bal ${new_bal:.2f}\nContact @Saintlocksupport")
                     try:
                         await context.bot.send_message(chat_id=ADMIN_ID, text=f"BUY NOW BAL {order_id} @{username} ${total:.2f}")
                     except:
@@ -590,11 +590,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 elif method == "btc":
                     o["status"] = "pending_btc"
                     save_json(ORDERS_FILE, orders)
-                    await q.message.reply_text(f"Order {order_id} Total ${total:.2f} BTC: `{BTC_WALLET}` Note: {order_id}", parse_mode="Markdown")
+                    await q.message.reply_text(f"Order {order_id} Total ${total:.2f} BTC: {BTC_WALLET} Note: {order_id}", parse_mode="Markdown")
                 else:
                     o["status"] = "pending_cash"
                     save_json(ORDERS_FILE, orders)
-                    await q.message.reply_text(f"Order {order_id} Total ${total:.2f} CashApp: `{CASHAPP_TAG}` Note: {order_id}", parse_mode="Markdown")
+                    await q.message.reply_text(f"Order {order_id} Total ${total:.2f} CashApp: {CASHAPP_TAG} Note: {order_id}", parse_mode="Markdown")
                 break
         return
 
@@ -670,8 +670,8 @@ async def send_product_view(q, cat_id, idx, context, uid, added=False):
                 lines.append(f"• {o}")
         opt_text = "\n\nAvailable Options:\n" + "\n".join(lines)
     sel_text = f"\nSelected: {opt} - ${unit:.2f}" if opt else ""
-    added_text = "\n\n✅ Added to cart!" if added else ""
-    text = f"*{prod['name']}*{sel_text}\n\nUnit: ${unit:.2f}\nDesc: {prod['desc']}\nMin: {min_q} | Max: {max_q}{opt_text}\n\nQty: *{qty}* x ${unit:.2f} = *${total:.2f}*\nBalance: ${bal:.2f} | Cart: {cart_count} items ${cart_total:.2f}{added_text}"
+    added_text = "\n\nAdded to cart!" if added else ""
+    text = f"{prod['name']}{sel_text}\n\nUnit: ${unit:.2f}\nDesc: {prod['desc']}\nMin: {min_q} | Max: {max_q}{opt_text}\n\nQty: {qty} x ${unit:.2f} = ${total:.2f}\nBalance: ${bal:.2f} | Cart: {cart_count} items ${cart_total:.2f}{added_text}"
     kb = []
     if options:
         for o in options:
@@ -679,12 +679,12 @@ async def send_product_view(q, cat_id, idx, context, uid, added=False):
             price_show = f" ${o['price']:.2f}" if isinstance(o, dict) and o.get("price") is not None else ""
             kb.append([InlineKeyboardButton(f"{name}{price_show}", callback_data=f"seloptview_{cat_id}|{idx}|{name}")])
     kb.append([
-        InlineKeyboardButton("➖", callback_data=f"qtyviewminus_{cat_id}|{idx}"),
+        InlineKeyboardButton("-", callback_data=f"qtyviewminus_{cat_id}|{idx}"),
         InlineKeyboardButton(f"Qty: {qty}", callback_data="noop"),
-        InlineKeyboardButton("➕", callback_data=f"qtyviewplus_{cat_id}|{idx}")
+        InlineKeyboardButton("+", callback_data=f"qtyviewplus_{cat_id}|{idx}")
     ])
-    kb.append([InlineKeyboardButton(f"🛒 Add to Cart - ${total:.2f}", callback_data=f"addcart_{cat_id}|{idx}")])
-    kb.append([InlineKeyboardButton(f"⚡ Buy Now - ${total:.2f}", callback_data=f"buynow_{cat_id}|{idx}")])
+    kb.append([InlineKeyboardButton(f"Add to Cart - ${total:.2f}", callback_data=f"addcart_{cat_id}|{idx}")])
+    kb.append([InlineKeyboardButton(f"Buy Now - ${total:.2f}", callback_data=f"buynow_{cat_id}|{idx}")])
     kb.append([InlineKeyboardButton(f"View Cart ({cart_count})", callback_data="viewcart"), InlineKeyboardButton("Back", callback_data=f"cat_{cat_id}")])
     try:
         await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
@@ -700,7 +700,7 @@ async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         raw = update.message.text.split(" ", 1)[1] if " " in update.message.text else ""
         if "|" not in raw:
-            await context.bot.send_message(chat_id=ADMIN_ID, text=f"❌ Use pipes | \n/addproduct shop_low | Name | Price | Desc | [Options] | [Min:Max]")
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"Use pipes | \n/addproduct shop_low | Name | Price | Desc | [Options] | [Min:Max]")
             return
         parts = [x.strip() for x in raw.split("|")]
         cat_id = parts[0].lower()
@@ -729,7 +729,7 @@ async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
             new_prod["options"] = options
         prods.append(new_prod)
         save_json(cat["file"], prods)
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"✅ Saved '{name}' to {cat['name']} ({cat['file']}) Min {min_q} Max {max_q} Total {len(prods)}")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Saved '{name}' to {cat['name']} ({cat['file']}) Min {min_q} Max {max_q} Total {len(prods)}")
     except Exception as e:
         await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}")
 
