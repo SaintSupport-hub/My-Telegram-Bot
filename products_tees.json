@@ -101,5 +101,49 @@
         "stock": null
       }
     ]
+  },
+  {
+    "name": "Hertz",
+    "price": "15",
+    "desc": "Hertz Points Method (Simple)\n1. Go to Hertz.com or open the app and log in\u00a0\n2. Enter your rental location, dates, and times\u00a0\n3. Check the box that says \u201cUse my Hertz Gold Plus Rewards points\u201d\u00a0\n4. Pick your car\n5. Review the total (points cover base rate\u2014taxes and fees you pay separate)\u00a0\n6. Complete the reservation\n7. Pick up and enjoy the free rental",
+    "min_qty": 1,
+    "max_qty": 999,
+    "options": [
+      {
+        "name": "Hertz + CC",
+        "price": 15.0,
+        "min_qty": null,
+        "max_qty": null,
+        "stock": null
+      },
+      {
+        "name": "Hertz + AMEX",
+        "price": 23.1,
+        "min_qty": null,
+        "max_qty": null,
+        "stock": null
+      },
+      {
+        "name": "Hertz + 1500-3000 Points",
+        "price": 35.17,
+        "min_qty": null,
+        "max_qty": null,
+        "stock": null
+      },
+      {
+        "name": "Hertz + 5000-7500 Points",
+        "price": 49.0,
+        "min_qty": null,
+        "max_qty": null,
+        "stock": null
+      },
+      {
+        "name": "Hertz + 5000-10000 Points",
+        "price": 66.0,
+        "min_qty": null,
+        "max_qty": null,
+        "stock": null
+      }
+    ]
   }
 ]
