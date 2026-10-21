@@ -36,7 +36,7 @@ def safe_float(v, default=0.0):
     except: return default
 
 def gh_headers():
-    return {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.【entity-github¦canonical_name=GitHub】.v3+json"}
+    return {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd. github.v3+json"}
 
 def load_json(path, default):
     gh=None
@@ -80,6 +80,19 @@ def save_json(path,data):
         resp=requests.put(url, headers=gh_headers(), json=payload, timeout=15)
         return resp.status_code in [200,201]
     except: return False
+
+def force_push_json(path, data):
+    with open(path,"w") as f: json.dump(data,f,indent=2)
+    if not GH_TOKEN: return "no GH"
+    try:
+        url=f"https://api.github.com/repos/{GH_REPO}/contents/{path}"
+        r=requests.get(url, headers=gh_headers())
+        sha=r.json().get("sha") if r.status_code==200 else None
+        payload={"message":f"Update {path}","content":base64.b64encode(json.dumps(data,indent=2).encode()).decode()}
+        if sha: payload["sha"]=sha
+        resp=requests.put(url, headers=gh_headers(), json=payload, timeout=15)
+        return str(resp.status_code)
+    except Exception as e: return str(e)
 
 def get_categories():
     cats=load_json(CATEGORIES_FILE, DEFAULT_CATEGORIES)
@@ -213,7 +226,7 @@ def is_url(s): return s.startswith("http://") or s.startswith("https://")
 
 app=Flask(__name__)
 @app.route("/")
-def home(): return "LIVE - PUSHALL FIX"
+def home(): return "LIVE - DEL FIXED"
 def run_web(): app.run(host="0.0.0.0",port=int(os.environ.get("PORT",10000)))
 def is_admin(uid): return uid==ADMIN_ID
 async def post_init(app): await app.bot.set_my_commands([BotCommand("start","Open Shop Menu")])
@@ -649,17 +662,18 @@ async def del_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         prods=load_json(cat["file"],[])
         if not prods:
-            await context.bot.send_message(chat_id=ADMIN_ID, text=f"❌ {cat['name']} is empty. File {cat['file']} has 0 products.")
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"❌ {cat['name']} is empty - {cat['file']} has 0")
             return
         if idx < 0 or idx >= len(prods):
             listing = "\n".join([f"{i}: {p['name']}" for i,p in enumerate(prods)])[:3000]
-            await context.bot.send_message(chat_id=ADMIN_ID, text=f"❌ Index {idx} out of range. It has {len(prods)} products (0-{len(prods)-1}):\n{listing}")
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"❌ Index {idx} out of range. {cat['name']} ({cat['file']}) has {len(prods)}:\n{listing}")
             return
         removed=prods.pop(idx)
-        save_json(cat["file"],prods)
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"🗑️ Deleted #{idx}: {removed['name']} from {cat['name']}. Remaining: {len(prods)}")
+        gh_status=force_push_json(cat["file"], prods)
+        verify=load_json(cat["file"],[])
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"🗑️ Deleted #{idx}: {removed['name']} from {cat['name']} ({cat['file']})\nGH Push: {gh_status}\nRemaining now: {len(verify)} items\n"+"\n".join([f"{i}: {p['name']}" for i,p in enumerate(verify)][:10])+"\n\nNow do /start - it should be GONE. DO NOT run /pushall after delete!")
     except Exception as e:
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}\nUse like /delproduct shop_food | 0")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}\nUse like /delproduct shop_tees | 0")
 
 async def add_image_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
@@ -741,7 +755,7 @@ async def fixcats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         {"id": "shop_accessories", "name": "Shop Accessories", "file": "products_accessories.json"}
     ]
     save_json(CATEGORIES_FILE, cats)
-    await context.bot.send_message(chat_id=ADMIN_ID, text="✅ FIXED CATEGORIES\nshop_tees (Shop Accounts) -> products_tees.json\nshop_accessories -> products_accessories.json")
+    await context.bot.send_message(chat_id=ADMIN_ID, text="✅ FIXED CATEGORIES\nshop_tees (Shop Accounts) -> products_tees.json")
 
 async def pushall_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
@@ -754,21 +768,12 @@ async def pushall_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if os.path.exists(f):
             try:
                 with open(f,"r") as file: data=json.load(file)
-                with open(f,"w") as wf: json.dump(data,wf,indent=2)
-                if GH_TOKEN:
-                    url=f"https://api.github.com/repos/{GH_REPO}/contents/{f}"
-                    r=requests.get(url, headers=gh_headers())
-                    sha=r.json().get("sha") if r.status_code==200 else None
-                    payload={"message":f"FORCE PUSH {f}","content":base64.b64encode(json.dumps(data,indent=2).encode()).decode()}
-                    if sha: payload["sha"]=sha
-                    resp=requests.put(url, headers=gh_headers(), json=payload, timeout=15)
-                    cnt=len(data) if isinstance(data,list) else len(data)
-                    out.append(f"{f}: {cnt} -> GH {resp.status_code}")
-                else:
-                    out.append(f"{f}: local only")
+                st=force_push_json(f, data)
+                cnt=len(data) if isinstance(data,list) else len(data)
+                out.append(f"{f}: {cnt} -> GH {st}")
             except Exception as e:
                 out.append(f"{f}: ERR {e}")
-    await context.bot.send_message(chat_id=ADMIN_ID, text="PUSHED LOCAL -> GITHUB:\n"+"\n".join(out)+"\n\nNow do /start again - you should see 8")
+    await context.bot.send_message(chat_id=ADMIN_ID, text="PUSHED LOCAL -> GITHUB:\n"+"\n".join(out)+"\n\nNow do /start again")
 
 async def add_balance_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
