@@ -37,6 +37,7 @@ def safe_float(v, default=0.0):
 
 def gh_headers():
     return {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+
 def load_json(path, default):
     local=None
     if os.path.exists(path):
@@ -55,6 +56,7 @@ def load_json(path, default):
         with open(path,"w") as f: json.dump(gh,f,indent=2)
         return gh
     return default
+
 def save_json(path,data):
     with open(path,"w") as f: json.dump(data,f,indent=2)
     if not GH_TOKEN: return True
@@ -67,6 +69,7 @@ def save_json(path,data):
         resp=requests.put(url, headers=gh_headers(), json=payload, timeout=15)
         return resp.status_code in [200,201]
     except: return False
+
 def get_categories():
     cats=load_json(CATEGORIES_FILE, DEFAULT_CATEGORIES)
     ids=[c["id"] for c in cats]
@@ -74,18 +77,21 @@ def get_categories():
         cats.append({"id": "shop_high", "name": "SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"})
         save_json(CATEGORIES_FILE,cats)
     return cats
+
 def get_cat_by_id(cat_id):
     if cat_id=="shop_high": return {"id": "shop_high", "name": "SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"}
     if cat_id=="shop_low": return {"id": "shop_low", "name": "SHOP LOW % SNIFF [Med-Low Bal]", "file": "products_low.json"}
     for c in get_categories():
         if c["id"]==cat_id: return c
     return None
+
 def get_loyalty_title(pct):
     if pct >= 100: return "SAINTLOCK ELITE"
     if pct >= 75: return "SAINT"
     if pct >= 50: return "GOLD"
     if pct >= 25: return "LOYAL"
     return "CUSTOMER"
+
 def get_user(uid):
     users=load_json(USERS_FILE,{})
     s=str(uid)
@@ -95,33 +101,52 @@ def get_user(uid):
     if "loyalty" not in users[s]: users[s]["loyalty"]=0
     if "total_spent" not in users[s]: users[s]["total_spent"]=0
     return users[s]
+
 def add_loyalty(uid, amount_spent):
-    if amount_spent < 10: return 0
-    inc = int(amount_spent // 10) * 3
+    try:
+        amount_spent = float(amount_spent)
+    except:
+        return 0
+    if amount_spent <= 0:
+        return 0
+    inc = int(amount_spent * 0.3)
+    if inc < 1 and amount_spent >= 1:
+        inc = 1
+    if inc <= 0:
+        return 0
     users=load_json(USERS_FILE,{})
     s=str(uid)
-    if s not in users: users[s]={"balance":0.0,"loyalty":0,"total_spent":0.0}
+    if s not in users:
+        users[s]={"balance":0.0,"loyalty":0,"total_spent":0.0}
+    if "loyalty" not in users[s]:
+        users[s]["loyalty"]=0
+    if "total_spent" not in users[s]:
+        users[s]["total_spent"]=0
     users[s]["loyalty"] = min(100, int(users[s].get("loyalty",0) + inc))
     users[s]["total_spent"] = float(users[s].get("total_spent",0)) + float(amount_spent)
     save_json(USERS_FILE,users)
     return inc
+
 def add_balance(uid,amt):
     users=load_json(USERS_FILE,{})
     s=str(uid)
     if s not in users: users[s]={"balance":0.0,"loyalty":0,"total_spent":0.0}
     users[s]["balance"]=float(users[s].get("balance",0))+float(amt)
     save_json(USERS_FILE,users)
-    if float(amt) >= 10: add_loyalty(uid, float(amt))
+    if float(amt) >= 1: add_loyalty(uid, float(amt))
     return users[s]["balance"]
+
 def deduct_balance(uid,amt):
     users=load_json(USERS_FILE,{})
     s=str(uid)
     if float(users[s].get("balance",0))<float(amt): return None
     users[s]["balance"]=float(users[s].get("balance",0))-float(amt)
     save_json(USERS_FILE,users)
-    if float(amt) >= 10: add_loyalty(uid, float(amt))
+    if float(amt) >= 1: add_loyalty(uid, float(amt))
     return users[s]["balance"]
+
 def gen_id(): return "ORD-"+ "".join(random.choices(string.ascii_uppercase+string.digits,k=6))
+
 def keep_alive_loop():
     while True:
         time.sleep(600)
@@ -129,6 +154,7 @@ def keep_alive_loop():
             if RENDER_URL: requests.get(RENDER_URL,timeout=10)
             requests.get("http://localhost:10000/",timeout=5)
         except: pass
+
 def get_cart(uid): return load_json(CARTS_FILE,{}).get(str(uid),[])
 def get_cart_total(uid):
     cart=get_cart(uid); total=sum(safe_float(it.get("total",0)) for it in cart); return total,len(cart)
@@ -138,6 +164,7 @@ def add_to_cart(uid,item):
     carts[s].append(item); save_json(CARTS_FILE,carts); return len(carts[s])
 def clear_cart(uid):
     carts=load_json(CARTS_FILE,{}); carts[str(uid)]=[]; save_json(CARTS_FILE,carts)
+
 def parse_options_string(opts_raw):
     if not opts_raw: return []
     result=[]
@@ -158,6 +185,7 @@ def parse_options_string(opts_raw):
         except: stock=None
         result.append({"name":name,"price":price,"min_qty":min_q,"max_qty":max_q,"stock":stock})
     return result
+
 def parse_minmax_string(s):
     s=s.strip().replace(" ","")
     if not s: return 1,999
@@ -171,16 +199,18 @@ def parse_minmax_string(s):
         except: return 1,999
     try: return int(float(s)),999
     except: return 1,999
+
 def is_minmax_string(s):
     s=s.strip()
     if re.match(r"^\d+$",s): return True
     if re.match(r"^\d+\s*[:\-]\s*\d+$",s): return True
     return False
+
 def is_url(s): return s.startswith("http://") or s.startswith("https://")
 
 app=Flask(__name__)
 @app.route("/")
-def home(): return "LIVE - BUY NOW FIX"
+def home(): return "LIVE - LOYALTY FIX"
 def run_web(): app.run(host="0.0.0.0",port=int(os.environ.get("PORT",10000)))
 def is_admin(uid): return uid==ADMIN_ID
 async def post_init(app): await app.bot.set_my_commands([BotCommand("start","Open Shop Menu")])
@@ -293,7 +323,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try: await q.answer()
     except: pass
     d=q.data; uid=q.from_user.id; username=q.from_user.username or "no_username"
-
     if d=="cat_shop_low":
         await show_category(q,"shop_low", is_admin_view=is_admin(uid)); return
     if d=="cat_shop_high":
@@ -374,8 +403,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if s in carts and 0<=idx<len(carts[s]): carts[s].pop(idx); save_json(CARTS_FILE,carts)
         await show_cart(q,uid); return
     if d=="cartclear": clear_cart(uid); await show_cart(q,uid); return
-
-    # CART PAY - FIXED WITH SUPPORT MESSAGE
     if d.startswith("cartpay_"):
         method=d.replace("cartpay_",""); cart=get_cart(uid)
         if not cart:
@@ -385,8 +412,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except: pass
             return
         total=sum(safe_float(it.get("total",0)) for it in cart); order_id=gen_id()
-        orders=load_json(ORDERS_FILE,[]); 
-        item_list="\n".join([f"- {it['name']} {it.get('option','')} x{it['qty']} = ${safe_float(it['total']):.2f}" for it in cart])
+        orders=load_json(ORDERS_FILE,[]); item_list="\n".join([f"- {it['name']} {it.get('option','')} x{it['qty']} = ${safe_float(it['total']):.2f}" for it in cart])
         orders.append({"order_id":order_id,"user_id":uid,"username":username,"product":f"CART {len(cart)} items","price":total,"method":method,"status":"pending","items":cart,"total":total}); save_json(ORDERS_FILE,orders)
         if method=="bal":
             if get_user(uid).get("balance",0)<total:
@@ -399,7 +425,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             clear_cart(uid); await q.message.chat.send_message(f"Order {order_id} ${total:.2f} CashApp: {CASHAPP_TAG}\n\nPlease send your order # and a ss of this order to support {SUPPORT_HANDLE} to complete this order")
         return
-
     if d.startswith("view_"):
         parts=d.replace("view_","").rsplit("_",1); cat_id=parts[0]; idx=int(parts[1])
         cat=get_cat_by_id(cat_id); p=load_json(cat["file"],[])[idx]
@@ -448,8 +473,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         opt=context.user_data.get(f"opt_{cat_id}_{idx}",""); unit=safe_float(context.user_data.get(f"optprice_{cat_id}_{idx}", safe_float(prod.get("price",0)))); total=unit*qty
         item={"name":prod["name"],"category":cat_id,"product_idx":idx,"option":opt,"unit_price":unit,"qty":qty,"total":total}
         count=add_to_cart(uid,item); await q.answer(f"Added! 🛒 {count}"); await send_product_view(q,cat_id,idx,context,uid,added=True); return
-
-    # BUY NOW - FIXED - NOW WORKS FROM PHOTO
     if d.startswith("buynow_"):
         try:
             rest=d.replace("buynow_",""); cat_id,idx_str=rest.rsplit("|",1); idx=int(idx_str)
@@ -463,8 +486,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await q.message.chat.send_message(f"Buy Now error: {e}")
         return
-
-    # PAY NOW - FIXED ID PARSING
     if d.startswith("paybalnow_"):
         order_id=d[len("paybalnow_"):]; method="bal"
     elif d.startswith("paybtcnow_"):
@@ -473,7 +494,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         order_id=d[len("paycashnow_"):]; method="cash"
     else:
         order_id=None
-
     if order_id:
         orders=load_json(ORDERS_FILE,[])
         for o in orders:
@@ -536,9 +556,9 @@ async def send_product_view(q,cat_id,idx,context,uid,added=False):
             except: pass
             await q.message.chat.send_photo(photo=img_url, caption=text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
             return
-        except Exception as e:
+        except:
             try:
-                await q.message.chat.send_message(f"{text}\n\n🖼️ [Image Link]({img_url})", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+                await q.message.chat.send_message(f"{text}\n\n🖼️ [Image]({img_url})", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
                 return
             except: pass
     try:
@@ -666,8 +686,22 @@ async def add_balance_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         raw=update.message.text.split(" ",1)[1]; uid_str,amt=[x.strip() for x in raw.split("|")]; new_bal=add_balance(int(uid_str) if uid_str.isdigit() else uid_str,float(amt))
         u=get_user(int(uid_str) if uid_str.isdigit() else uid_str)
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Added ${amt} to {uid_str} - ${new_bal:.2f}")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Added ${amt} to {uid_str} - ${new_bal:.2f} | Loyalty now {u.get('loyalty',0)}%")
     except Exception as e: await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}")
+
+async def add_loyalty_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    try:
+        raw=update.message.text.split(" ",1)[1]
+        uid_str, amt = [x.strip() for x in raw.split("|")]
+        uid = int(uid_str) if uid_str.isdigit() else uid_str
+        inc = add_loyalty(uid, float(amt))
+        u=get_user(uid)
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Added {inc}% loyalty for ${amt} to {uid_str} -> Now {u.get('loyalty',0)}% [{get_loyalty_title(u.get('loyalty',0))}]")
+    except Exception as e:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}\nUse /addloyalty 123456789 | 8.37")
 
 async def saveall_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
@@ -694,6 +728,7 @@ def run_bot():
     b.add_handler(CommandHandler("editproduct",edit_product))
     b.add_handler(CommandHandler("listproducts",list_products))
     b.add_handler(CommandHandler("addbalance",add_balance_cmd))
+    b.add_handler(CommandHandler("addloyalty",add_loyalty_cmd))
     b.add_handler(CommandHandler("saveall",saveall_cmd))
     b.add_handler(CallbackQueryHandler(button_handler))
     b.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u,c: None))
