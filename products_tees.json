@@ -48,5 +48,28 @@
       }
     ],
     "image": "https://i.postimg.cc/XYVmDDZT/857766638-1123688640023952-6068289515206143865-n.jpg"
+  },
+  {
+    "name": "Victoria\u2019s Secret",
+    "price": "4.25",
+    "desc": "Victoria secret + SC/CC\n\n1. login to vcitoira secret\u00a0\n\n2. add whatedo it for ver you want\u00a0\u00a0\n\n3. change shipping address to the address you want the stuff sent to checkout and wait until it shipped.",
+    "min_qty": 5,
+    "max_qty": 2819,
+    "options": [
+      {
+        "name": "Victoria\u2019s Secret [5$ REWARD CODES STACKABLE]",
+        "price": 2.1,
+        "min_qty": 5,
+        "max_qty": 2819,
+        "stock": null
+      },
+      {
+        "name": "Victoria\u2019s Secret [10$ REWARD CODES STACKABLE]",
+        "price": 4.25,
+        "min_qty": 3,
+        "max_qty": 2819,
+        "stock": null
+      }
+    ]
   }
 ]
