@@ -38,26 +38,39 @@ def safe_float(v, default=0.0):
 def gh_headers():
     return {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json"}
 
+# === FIXED LOAD - GITHUB FIRST, LOCAL IS JUST CACHE ===
 def load_json(path, default):
-    local=None
-    if os.path.exists(path):
-        try:
-            with open(path,"r") as f: local=json.load(f)
-        except: pass
     gh=None
     if GH_TOKEN:
         try:
             url=f"https://api.github.com/repos/{GH_REPO}/contents/{path}"
             r=requests.get(url, headers=gh_headers(), timeout=15)
-            if r.status_code==200: gh=json.loads(base64.b64decode(r.json()["content"]).decode())
+            if r.status_code==200:
+                gh=json.loads(base64.b64decode(r.json()["content"]).decode())
+                with open(path,"w") as f: json.dump(gh,f,indent=2)
+                return gh
+        except Exception as e:
+            print(f"GH load fail {path} {e}")
+    if os.path.exists(path):
+        try:
+            with open(path,"r") as f: return json.load(f)
         except: pass
-    if local is not None: return local
-    if gh is not None:
-        with open(path,"w") as f: json.dump(gh,f,indent=2)
-        return gh
     return default
 
+# === FIXED SAVE - WILL NEVER OVERWRITE 【entity-GITHUB¦canonical_name=GitHub】 WITH EMPTY ===
 def save_json(path,data):
+    if isinstance(data, list) and len(data)==0:
+        if GH_TOKEN:
+            try:
+                url=f"https://api.github.com/repos/{GH_REPO}/contents/{path}"
+                r=requests.get(url, headers=gh_headers(), timeout=15)
+                if r.status_code==200:
+                    gh=json.loads(base64.b64decode(r.json()["content"]).decode())
+                    if isinstance(gh, list) and len(gh)>0:
+                        print(f"BLOCKED overwrite of {path} - GH has {len(gh)} items, local is empty")
+                        with open(path,"w") as f: json.dump(gh,f,indent=2)
+                        return False
+            except: pass
     with open(path,"w") as f: json.dump(data,f,indent=2)
     if not GH_TOKEN: return True
     try:
@@ -202,7 +215,7 @@ def is_url(s): return s.startswith("http://") or s.startswith("https://")
 
 app=Flask(__name__)
 @app.route("/")
-def home(): return "LIVE - MIN PER OPTION FIX"
+def home(): return "LIVE - NO DELETE FIX"
 def run_web(): app.run(host="0.0.0.0",port=int(os.environ.get("PORT",10000)))
 def is_admin(uid): return uid==ADMIN_ID
 async def post_init(app): await app.bot.set_my_commands([BotCommand("start","Open Shop Menu")])
@@ -418,7 +431,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             clear_cart(uid); await q.message.chat.send_message(f"Order {order_id} ${total:.2f} CashApp: {CASHAPP_TAG}\n\nPlease send your order # and a ss of this order to support {SUPPORT_HANDLE} to complete this order")
         return
 
-    # === THE FIX IS HERE - view_ now auto-picks 1st option per product ===
     if d.startswith("view_"):
         parts=d.replace("view_","").rsplit("_",1); cat_id=parts[0]; idx=int(parts[1])
         cat=get_cat_by_id(cat_id); p=load_json(cat["file"],[])[idx]
@@ -526,7 +538,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def send_product_view(q,cat_id,idx,context,uid,added=False):
     cat=get_cat_by_id(cat_id); prod=load_json(cat["file"],[])[idx]
-    # If product has options but nothing selected yet, auto-pick first option
     if prod.get("options") and not context.user_data.get(f"opt_{cat_id}_{idx}"):
         first = prod["options"][0]
         context.user_data[f"opt_{cat_id}_{idx}"]=first["name"]
@@ -545,7 +556,6 @@ async def send_product_view(q,cat_id,idx,context,uid,added=False):
     cur_min = int(opt_min) if opt_min is not None else min_q
     cur_max = int(opt_max) if opt_max is not None else max_q
     if opt_stock is not None: cur_max = min(cur_max, int(opt_stock))
-    # Force qty to not go below cur_min
     if qty < cur_min:
         qty = cur_min
         context.user_data[f"qty_{cat_id}_{idx}"]=qty
@@ -624,7 +634,7 @@ async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if options: new_prod["options"]=options
         if image_url and is_url(image_url): new_prod["image"]=image_url
         prods.append(new_prod); save_json(cat["file"],prods)
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"✅ Saved '{name}' From ${price} Min {min_q} Image: {'Yes' if image_url else 'No'}")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"✅ Saved '{name}' From ${price} Min {min_q} Image: {'Yes' if image_url else 'No'} - File now has {len(prods)} items")
     except Exception as e: await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}")
 
 async def del_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -637,21 +647,21 @@ async def del_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
         idx=int(idx_str)
         cat=get_cat_by_id(cat_id.lower())
         if not cat:
-            await context.bot.send_message(chat_id=ADMIN_ID, text=f"❌ Category {cat_id} not found. Use shop_low, shop_high, shop_tees, shop_food, shop_accessories")
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"❌ Category {cat_id} not found")
             return
         prods=load_json(cat["file"],[])
         if not prods:
-            await context.bot.send_message(chat_id=ADMIN_ID, text=f"❌ {cat['name']} is empty. File {cat['file']} has 0 products. Did you add to different category? Check /listproducts {cat_id}")
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"❌ {cat['name']} is empty. File {cat['file']} has 0 products.")
             return
         if idx < 0 or idx >= len(prods):
             listing = "\n".join([f"{i}: {p['name']}" for i,p in enumerate(prods)])[:3000]
-            await context.bot.send_message(chat_id=ADMIN_ID, text=f"❌ Index {idx} out of range for {cat['name']}. It has {len(prods)} products (0-{len(prods)-1}):\n{listing}")
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"❌ Index {idx} out of range. It has {len(prods)} products (0-{len(prods)-1}):\n{listing}")
             return
         removed=prods.pop(idx)
         save_json(cat["file"],prods)
         await context.bot.send_message(chat_id=ADMIN_ID, text=f"🗑️ Deleted #{idx}: {removed['name']} from {cat['name']}. Remaining: {len(prods)}")
     except Exception as e:
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}\nUse like /delproduct shop_food | 0\nFirst do /listproducts shop_food")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}\nUse like /delproduct shop_food | 0")
 
 async def add_image_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
@@ -743,19 +753,20 @@ async def add_loyalty_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}\nUse /addloyalty 123456789 | 8.37")
 
+# === SAFE SAVEALL - WILL NOT DELETE ===
 async def saveall_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
     try: await update.message.delete()
     except: pass
     cats=get_categories(); files=[CATEGORIES_FILE,ORDERS_FILE,USERS_FILE,CARTS_FILE]+[c["file"] for c in cats]
-    saved=[]
+    out=[]
     for f in set(files):
-        if os.path.exists(f):
-            try:
-                with open(f,"r") as file: data=json.load(file)
-                save_json(f,data); saved.append(f)
-            except: pass
-    await context.bot.send_message(chat_id=ADMIN_ID, text=f"Saved {len(saved)}")
+        data=load_json(f, [])
+        if isinstance(data, list):
+            out.append(f"{f}: {len(data)} items - SAFE")
+        else:
+            out.append(f"{f}: {len(data)} keys - SAFE")
+    await context.bot.send_message(chat_id=ADMIN_ID, text="SAFE SAVE - Nothing deleted:\n"+"\n".join(out))
 
 def run_bot():
     b=ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
