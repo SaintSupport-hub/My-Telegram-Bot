@@ -24,5 +24,28 @@
         "stock": null
       }
     ]
+  },
+  {
+    "name": "Lowe\u2019s",
+    "price": "4.75",
+    "desc": "ALL CARDS COME WITH PIN CAN BE RESOLD OR USED INSTORE ONLINE AND STACKED\n\nONLINE CAN ONLY BE USED 1 TIME\n\nINSTORE CAN STACK UNLIMITED",
+    "min_qty": 5,
+    "max_qty": 28473,
+    "options": [
+      {
+        "name": "GIFTCARD REWARDS CODES [10$]",
+        "price": 4.75,
+        "min_qty": 5,
+        "max_qty": 28473,
+        "stock": null
+      },
+      {
+        "name": "GIFTCARD REWARDS CODE [10$]",
+        "price": 4.75,
+        "min_qty": 100,
+        "max_qty": 28473,
+        "stock": null
+      }
+    ]
   }
 ]
