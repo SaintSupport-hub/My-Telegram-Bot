@@ -8,5 +8,21 @@
     "name": "Discover [5000-10000]",
     "price": "87.25",
     "desc": "These are discover bank logins comes with user:pass\nHow to use :\u00a0\n1. Link it to Amazon and buy stuff\u00a0\n2. you can always reship a card to you and use it once it arrive\u00a0\n3. find your own methods !!"
+  },
+  {
+    "name": "PetSmart",
+    "price": "5.50",
+    "desc": "Easy to use:\u00a0\n1. Login to pet smart\u00a0\n2. add whatever you need\u00a0\n3. pick a pickup location\u00a0\n4. checkout make sure to change name incase they ask for ID and make sure to change email to get updates on order !",
+    "min_qty": 1,
+    "max_qty": 999,
+    "options": [
+      {
+        "name": "PetSmart +",
+        "price": null,
+        "min_qty": null,
+        "max_qty": null,
+        "stock": null
+      }
+    ]
   }
 ]
