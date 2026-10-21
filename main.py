@@ -36,7 +36,7 @@ def safe_float(v, default=0.0):
     except: return default
 
 def gh_headers():
-    return {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.【entity-github¦canonical_name=GITHUB】.v3+json"}
+    return {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json"}
 
 def load_json(path, default):
     local=None
@@ -103,21 +103,15 @@ def get_user(uid):
     return users[s]
 
 def add_loyalty(uid, amount_spent):
-    try:
-        amount_spent = float(amount_spent)
-    except:
-        return 0
-    if amount_spent <= 0:
-        return 0
+    try: amount_spent = float(amount_spent)
+    except: return 0
+    if amount_spent <= 0: return 0
     inc = int(amount_spent * 0.3)
-    if inc < 1 and amount_spent >= 1:
-        inc = 1
-    if inc <= 0:
-        return 0
+    if inc < 1 and amount_spent >= 1: inc = 1
+    if inc <= 0: return 0
     users=load_json(USERS_FILE,{})
     s=str(uid)
-    if s not in users:
-        users[s]={"balance":0.0,"loyalty":0,"total_spent":0.0}
+    if s not in users: users[s]={"balance":0.0,"loyalty":0,"total_spent":0.0}
     if "loyalty" not in users[s]: users[s]["loyalty"]=0
     if "total_spent" not in users[s]: users[s]["total_spent"]=0
     users[s]["loyalty"] = min(100, int(users[s].get("loyalty",0) + inc))
@@ -208,7 +202,7 @@ def is_url(s): return s.startswith("http://") or s.startswith("https://")
 
 app=Flask(__name__)
 @app.route("/")
-def home(): return "LIVE - DEL FIX"
+def home(): return "LIVE - MIN PER OPTION FIX"
 def run_web(): app.run(host="0.0.0.0",port=int(os.environ.get("PORT",10000)))
 def is_admin(uid): return uid==ADMIN_ID
 async def post_init(app): await app.bot.set_my_commands([BotCommand("start","Open Shop Menu")])
@@ -423,14 +417,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             clear_cart(uid); await q.message.chat.send_message(f"Order {order_id} ${total:.2f} CashApp: {CASHAPP_TAG}\n\nPlease send your order # and a ss of this order to support {SUPPORT_HANDLE} to complete this order")
         return
+
+    # === THE FIX IS HERE - view_ now auto-picks 1st option per product ===
     if d.startswith("view_"):
         parts=d.replace("view_","").rsplit("_",1); cat_id=parts[0]; idx=int(parts[1])
         cat=get_cat_by_id(cat_id); p=load_json(cat["file"],[])[idx]
-        context.user_data[f"qty_{cat_id}_{idx}"]=int(p.get("min_qty",1))
-        context.user_data[f"opt_{cat_id}_{idx}"]=""; context.user_data[f"optprice_{cat_id}_{idx}"]=safe_float(p.get("price",0))
-        context.user_data[f"optmin_{cat_id}_{idx}"]=p.get("min_qty")
-        context.user_data[f"optmax_{cat_id}_{idx}"]=p.get("max_qty")
+        if p.get("options"):
+            first = p["options"][0]
+            context.user_data[f"opt_{cat_id}_{idx}"]=first["name"]
+            if first.get("price") is not None:
+                context.user_data[f"optprice_{cat_id}_{idx}"]=safe_float(first.get("price"), safe_float(p.get("price",0)))
+            else:
+                context.user_data[f"optprice_{cat_id}_{idx}"]=safe_float(p.get("price",0))
+            context.user_data[f"qty_{cat_id}_{idx}"]=int(first.get("min_qty") if first.get("min_qty") is not None else p.get("min_qty",1))
+            context.user_data[f"optmin_{cat_id}_{idx}"]=first.get("min_qty")
+            context.user_data[f"optmax_{cat_id}_{idx}"]=first.get("max_qty")
+            context.user_data[f"optstock_{cat_id}_{idx}"]=first.get("stock")
+        else:
+            context.user_data[f"qty_{cat_id}_{idx}"]=int(p.get("min_qty",1))
+            context.user_data[f"opt_{cat_id}_{idx}"]=""
+            context.user_data[f"optprice_{cat_id}_{idx}"]=safe_float(p.get("price",0))
+            context.user_data[f"optmin_{cat_id}_{idx}"]=p.get("min_qty")
+            context.user_data[f"optmax_{cat_id}_{idx}"]=p.get("max_qty")
         await send_product_view(q,cat_id,idx,context,uid); return
+
     if d.startswith("seloptview_"):
         rest=d.replace("seloptview_",""); cat_part,idx_part,opt_name=rest.split("|",2); cat_id=cat_part; idx=int(idx_part)
         cat=get_cat_by_id(cat_id); prod=load_json(cat["file"],[])[idx]
@@ -446,6 +456,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data[f"optmax_{cat_id}_{idx}"]=opt_obj.get("max_qty")
         context.user_data[f"optstock_{cat_id}_{idx}"]=opt_obj.get("stock")
         await send_product_view(q,cat_id,idx,context,uid); return
+
     if d.startswith("qtyviewminus_") or d.startswith("qtyviewplus_"):
         is_plus=d.startswith("qtyviewplus_"); rest=d.replace("qtyviewminus_","").replace("qtyviewplus_","")
         cat_id,idx_str=rest.rsplit("|",1); idx=int(idx_str)
@@ -464,6 +475,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if qty>min_q: qty-=1
             else: await q.answer(f"Min is {min_q}", show_alert=True); return
         context.user_data[key]=qty; await send_product_view(q,cat_id,idx,context,uid); return
+
     if d.startswith("addcart_"):
         rest=d.replace("addcart_",""); cat_id,idx_str=rest.rsplit("|",1); idx=int(idx_str)
         cat=get_cat_by_id(cat_id); prod=load_json(cat["file"],[])[idx]
@@ -471,6 +483,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         opt=context.user_data.get(f"opt_{cat_id}_{idx}",""); unit=safe_float(context.user_data.get(f"optprice_{cat_id}_{idx}", safe_float(prod.get("price",0)))); total=unit*qty
         item={"name":prod["name"],"category":cat_id,"product_idx":idx,"option":opt,"unit_price":unit,"qty":qty,"total":total}
         count=add_to_cart(uid,item); await q.answer(f"Added! 🛒 {count}"); await send_product_view(q,cat_id,idx,context,uid,added=True); return
+
     if d.startswith("buynow_"):
         try:
             rest=d.replace("buynow_",""); cat_id,idx_str=rest.rsplit("|",1); idx=int(idx_str)
@@ -484,6 +497,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await q.message.chat.send_message(f"Buy Now error: {e}")
         return
+
     if d.startswith("paybalnow_"):
         order_id=d[len("paybalnow_"):]; method="bal"
     elif d.startswith("paybtcnow_"):
@@ -512,6 +526,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def send_product_view(q,cat_id,idx,context,uid,added=False):
     cat=get_cat_by_id(cat_id); prod=load_json(cat["file"],[])[idx]
+    # If product has options but nothing selected yet, auto-pick first option
+    if prod.get("options") and not context.user_data.get(f"opt_{cat_id}_{idx}"):
+        first = prod["options"][0]
+        context.user_data[f"opt_{cat_id}_{idx}"]=first["name"]
+        context.user_data[f"optprice_{cat_id}_{idx}"]=safe_float(first.get("price"), safe_float(prod.get("price",0))) if first.get("price") is not None else safe_float(prod.get("price",0))
+        context.user_data[f"qty_{cat_id}_{idx}"]=int(first.get("min_qty") if first.get("min_qty") is not None else prod.get("min_qty",1))
+        context.user_data[f"optmin_{cat_id}_{idx}"]=first.get("min_qty")
+        context.user_data[f"optmax_{cat_id}_{idx}"]=first.get("max_qty")
+        context.user_data[f"optstock_{cat_id}_{idx}"]=first.get("stock")
     min_q=int(prod.get("min_qty",1)); max_q=int(prod.get("max_qty",999))
     qty=int(context.user_data.get(f"qty_{cat_id}_{idx}",min_q))
     opt=context.user_data.get(f"opt_{cat_id}_{idx}","")
@@ -522,6 +545,10 @@ async def send_product_view(q,cat_id,idx,context,uid,added=False):
     cur_min = int(opt_min) if opt_min is not None else min_q
     cur_max = int(opt_max) if opt_max is not None else max_q
     if opt_stock is not None: cur_max = min(cur_max, int(opt_stock))
+    # Force qty to not go below cur_min
+    if qty < cur_min:
+        qty = cur_min
+        context.user_data[f"qty_{cat_id}_{idx}"]=qty
     all_prices=[safe_float(prod.get("price",0))]
     for o in prod.get("options",[]):
         if o.get("price") is not None: all_prices.append(safe_float(o.get("price"),0))
