@@ -71,5 +71,35 @@
         "stock": null
       }
     ]
+  },
+  {
+    "name": "Cinemark",
+    "price": "8.30",
+    "desc": "The Fandango Method\nAfter buying the gift card:\n1. Go to Fandango.com\n2. Select a CINEMARK ONLY THEATER\n3. Go to checkout, press \u201cUse Giftcard or Promo Code\u201d\n4. Select Cinemark Giftcard\n5. Apply and enjoy your online checkout\n6.CASHOUT METHOD ORDER ON FANDANGO LATE WITH THE GIFTCARD\nSHOW UP LATE THEY WILL GIVE YOU CASH REFUND\u00a0\nCinemark Credits Method\n\n1. Open the Cinemark app or go to cinemark.com and log in\u00a0\n2. Go to checkout when buying tickets or concessions\u00a0\n3. Your available credits will show automatically\u00a0\n4. Select \u201capply credits\u201d to use them\u00a0\n5. Each credit covers one regular 2D ticket\u00a0\n6. For premium formats (XD, 3D, IMAX), pay the small upcharge\u00a0\n7. Complete your purchase\u2014online fees are waived for members\u00a0\n\nNote: Credits can also buy snacks at concessions\u2014just scan your QR code at checkout",
+    "min_qty": 1,
+    "max_qty": 999,
+    "options": [
+      {
+        "name": "Cinemark [PINLESS GIFTCARD - 20$-30$]",
+        "price": 8.3,
+        "min_qty": null,
+        "max_qty": null,
+        "stock": null
+      },
+      {
+        "name": "Cinemark [PINLESS GIFTCARD - 30$-50$]",
+        "price": 13.0,
+        "min_qty": null,
+        "max_qty": null,
+        "stock": null
+      },
+      {
+        "name": "Cinemark [PINLESS GIFTCARD - 50$-75$]",
+        "price": 25.17,
+        "min_qty": null,
+        "max_qty": null,
+        "stock": null
+      }
+    ]
   }
 ]
