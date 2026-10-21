@@ -17,12 +17,12 @@ USERS_FILE = "users.json"
 CARTS_FILE = "carts.json"
 
 DEFAULT_CATEGORIES = [
-    {"id": "shop", "name": "Shop CC", "file": "products.json"},
-    {"id": "shop_low", "name": "SHOP LOW % SNIFF [Med-Low Bal]", "file": "products_low.json"},
-    {"id": "shop_high", "name": "SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"},
-    {"id": "shop_tees", "name": "Shop Tees", "file": "products_tees.json"},
-    {"id": "shop_food", "name": "Shop Food", "file": "products_food.json"},
-    {"id": "shop_accessories", "name": "Shop Accessories", "file": "products_accessories.json"}
+    {"id": "shop", "name": "🛒Shop CC", "file": "products.json"},
+    {"id": "shop_low", "name": "⬇️SHOP LOW % SNIFF [Med-Low Bal]", "file": "products_low.json"},
+    {"id": "shop_high", "name": "⬆️SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"},
+    {"id": "shop_tees", "name": "🥊Shop Accounts", "file": "products_tees.json"},
+    {"id": "shop_food", "name": "🥙Shop Food", "file": "products_food.json"},
+    {"id": "shop_accessories", "name": "🥇Shop BINs", "file": "products_accessories.json"}
 ]
 MAIN_MENU_ORDER = ["shop", "shop_tees", "shop_food", "shop_accessories"]
 
@@ -35,7 +35,7 @@ def safe_float(v, default=0.0):
     except: return default
 
 def gh_headers():
-    return {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.【entity-github¦canonical_name=GitHub】.v3+json"}
+    return {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json"}
 def load_json(path, default):
     local=None
     if os.path.exists(path):
@@ -182,7 +182,7 @@ def is_url(s):
 
 app=Flask(__name__)
 @app.route("/")
-def home(): return "LIVE - FULL FINAL WITH DEL"
+def home(): return "LIVE - BACK BUTTON FIX"
 def run_web(): app.run(host="0.0.0.0",port=int(os.environ.get("PORT",10000)))
 def is_admin(uid): return uid==ADMIN_ID
 async def post_init(app): await app.bot.set_my_commands([BotCommand("start","Open Shop Menu")])
@@ -206,20 +206,39 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
 
 async def show_balance(q,uid):
-    u=get_user(uid); bal=u.get("balance",0); loy=u.get("loyalty",0); title=get_loyalty_title(loy)
-    txt=f"💰 Balance: ${bal:.2f}\n⭐ Loyalty: {loy}% [{title}]\nSpent: ${u.get('total_spent',0):.2f}\n\nNext title at {((loy//25)+1)*25}%"
-    kb=[[InlineKeyboardButton("Top Up",callback_data="topup_choose")],[InlineKeyboardButton("Back",callback_data="back")]]
-    await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb))
+    try:
+        u=get_user(uid); bal=u.get("balance",0); loy=u.get("loyalty",0); title=get_loyalty_title(loy)
+        txt=f"💰 Balance: ${bal:.2f}\n⭐ Loyalty: {loy}% [{title}]\nSpent: ${u.get('total_spent',0):.2f}\n\nNext title at {((loy//25)+1)*25}%"
+        kb=[[InlineKeyboardButton("Top Up",callback_data="topup_choose")],[InlineKeyboardButton("Back",callback_data="back")]]
+        if q.message.photo:
+            await q.message.delete()
+            await q.message.chat.send_message(txt, reply_markup=InlineKeyboardMarkup(kb))
+        else:
+            await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb))
+    except:
+        pass
 
 async def show_category(q,cat_id,is_admin_view=False):
     try:
         cat=get_cat_by_id(cat_id)
         if not cat:
-            await q.edit_message_text(f"❌ Category {cat_id} not found.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
+            text=f"❌ Category {cat_id} not found."
+            kb=[[InlineKeyboardButton("Back",callback_data="back")]]
+            if q.message.photo:
+                await q.message.delete()
+                await q.message.chat.send_message(text, reply_markup=InlineKeyboardMarkup(kb))
+            else:
+                await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb))
             return
         products=load_json(cat["file"],[])
         if not products:
-            await q.edit_message_text(f"🔴 {cat['name']} is empty", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
+            text=f"🔴 {cat['name']} is empty"
+            kb=[[InlineKeyboardButton("Back",callback_data="back")]]
+            if q.message.photo:
+                await q.message.delete()
+                await q.message.chat.send_message(text, reply_markup=InlineKeyboardMarkup(kb))
+            else:
+                await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb))
             return
         kb=[]
         for i,p in enumerate(products):
@@ -230,24 +249,49 @@ async def show_category(q,cat_id,is_admin_view=False):
                     if fv < fp or fp==0: fp=fv
             kb.append([InlineKeyboardButton(f"{p['name']} - From ${fp:.2f}",callback_data=f"view_{cat_id}_{i}")])
         kb.append([InlineKeyboardButton("Back",callback_data="back")])
-        await q.edit_message_text(f"⚫ *{cat['name']}* - {len(products)} items", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+        text=f"⚫ *{cat['name']}* - {len(products)} items"
+        if q.message.photo:
+            await q.message.delete()
+            await q.message.chat.send_message(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+        else:
+            await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
     except Exception as e:
-        await q.edit_message_text(f"Error in {cat_id}: {e}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
+        try:
+            if q.message.photo:
+                await q.message.delete()
+                await q.message.chat.send_message(f"Error in {cat_id}: {e}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
+            else:
+                await q.edit_message_text(f"Error in {cat_id}: {e}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
+        except:
+            pass
 
 async def show_cart(q,uid):
-    cart=get_cart(uid)
-    if not cart:
-        await q.edit_message_text("🛒 Cart is empty.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
-        return
-    total=sum(safe_float(it.get("total",0)) for it in cart)
-    lines=[f"{idx+1}. {it['name']} {it.get('option','')} x{it['qty']} = ${safe_float(it['total']):.2f}" for idx,it in enumerate(cart)]
-    txt="🛒 *Your Cart*\n\n"+"\n".join(lines)+f"\n\n*Total: ${total:.2f}*"
-    kb=[[InlineKeyboardButton(f"❌ {idx+1}",callback_data=f"cartdel_{idx}") ] for idx in range(len(cart))]
-    kb.append([InlineKeyboardButton("Clear",callback_data="cartclear")])
-    kb.append([InlineKeyboardButton(f"${total:.2f} Pay",callback_data="cartpay_bal")])
-    kb.append([InlineKeyboardButton(f"BTC",callback_data="cartpay_btc"), InlineKeyboardButton(f"Cash",callback_data="cartpay_cash")])
-    kb.append([InlineKeyboardButton("Back",callback_data="back")])
-    await q.edit_message_text(txt, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+    try:
+        cart=get_cart(uid)
+        if not cart:
+            txt="🛒 Cart is empty."
+            kb=[[InlineKeyboardButton("Back",callback_data="back")]]
+            if q.message.photo:
+                await q.message.delete()
+                await q.message.chat.send_message(txt, reply_markup=InlineKeyboardMarkup(kb))
+            else:
+                await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb))
+            return
+        total=sum(safe_float(it.get("total",0)) for it in cart)
+        lines=[f"{idx+1}. {it['name']} {it.get('option','')} x{it['qty']} = ${safe_float(it['total']):.2f}" for idx,it in enumerate(cart)]
+        txt="🛒 *Your Cart*\n\n"+"\n".join(lines)+f"\n\n*Total: ${total:.2f}*"
+        kb=[[InlineKeyboardButton(f"❌ {idx+1}",callback_data=f"cartdel_{idx}") ] for idx in range(len(cart))]
+        kb.append([InlineKeyboardButton("Clear",callback_data="cartclear")])
+        kb.append([InlineKeyboardButton(f"${total:.2f} Pay",callback_data="cartpay_bal")])
+        kb.append([InlineKeyboardButton(f"BTC",callback_data="cartpay_btc"), InlineKeyboardButton(f"Cash",callback_data="cartpay_cash")])
+        kb.append([InlineKeyboardButton("Back",callback_data="back")])
+        if q.message.photo:
+            await q.message.delete()
+            await q.message.chat.send_message(txt, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+        else:
+            await q.edit_message_text(txt, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+    except:
+        pass
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q=update.callback_query
@@ -260,8 +304,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_category(q,"shop_high", is_admin_view=is_admin(uid)); return
     if d=="cat_shop":
         kb=[[InlineKeyboardButton("SHOP LOW %",callback_data="cat_shop_low")],[InlineKeyboardButton("SHOP HIGH %",callback_data="cat_shop_high")],[InlineKeyboardButton("Back",callback_data="back")]]
-        try: await q.edit_message_text("💳 Shop CC - Choose Type:", reply_markup=InlineKeyboardMarkup(kb))
-        except: await q.message.reply_text("💳 Shop CC - Choose Type:", reply_markup=InlineKeyboardMarkup(kb))
+        try:
+            if q.message.photo:
+                await q.message.delete()
+                await q.message.chat.send_message("💳 Shop CC - Choose Type:", reply_markup=InlineKeyboardMarkup(kb))
+            else:
+                await q.edit_message_text("💳 Shop CC - Choose Type:", reply_markup=InlineKeyboardMarkup(kb))
+        except:
+            pass
         return
     if d.startswith("cat_"):
         await show_category(q,d.replace("cat_",""), is_admin_view=is_admin(uid)); return
@@ -277,24 +327,53 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 c=cat_map[cid]
                 kb.append([InlineKeyboardButton(c["name"], callback_data=f"cat_{c['id']}")])
         kb.append([InlineKeyboardButton(f"🛒 {count}",callback_data="viewcart"), InlineKeyboardButton(f"💰",callback_data="balance"), InlineKeyboardButton(f"📞",callback_data="support")])
-        await q.edit_message_text(header, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb)); return
+        try:
+            if q.message.photo:
+                await q.message.delete()
+                await q.message.chat.send_message(header, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+            else:
+                await q.edit_message_text(header, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+        except:
+            pass
+        return
     if d=="balance": await show_balance(q,uid); return
     if d=="viewcart": await show_cart(q,uid); return
     if d=="support":
         kb=[[InlineKeyboardButton("Message Support",url=f"tg://user?id={ADMIN_ID}")],[InlineKeyboardButton("Back",callback_data="back")]]
-        await q.edit_message_text("SUPPORT", reply_markup=InlineKeyboardMarkup(kb)); return
+        try:
+            if q.message.photo:
+                await q.message.delete()
+                await q.message.chat.send_message("SUPPORT", reply_markup=InlineKeyboardMarkup(kb))
+            else:
+                await q.edit_message_text("SUPPORT", reply_markup=InlineKeyboardMarkup(kb))
+        except: pass
+        return
     if d=="topup_choose":
         kb=[[InlineKeyboardButton("$10",callback_data="topup_amount_10"),InlineKeyboardButton("$20",callback_data="topup_amount_20")],[InlineKeyboardButton("$50",callback_data="topup_amount_50"),InlineKeyboardButton("$100",callback_data="topup_amount_100")],[InlineKeyboardButton("Back",callback_data="balance")]]
-        await q.edit_message_text("Choose Top Up amount:", reply_markup=InlineKeyboardMarkup(kb)); return
+        try:
+            if q.message.photo:
+                await q.message.delete()
+                await q.message.chat.send_message("Choose Top Up amount:", reply_markup=InlineKeyboardMarkup(kb))
+            else:
+                await q.edit_message_text("Choose Top Up amount:", reply_markup=InlineKeyboardMarkup(kb))
+        except: pass
+        return
     if d.startswith("topup_amount_"):
         context.user_data["topup_amount"]=d.replace("topup_amount_","")
         kb=[[InlineKeyboardButton("BTC",callback_data="topup_method_btc"),InlineKeyboardButton("CashApp",callback_data="topup_method_cash")]]
-        await q.edit_message_text(f"Top Up ${context.user_data['topup_amount']} - Choose method:", reply_markup=InlineKeyboardMarkup(kb)); return
+        try:
+            if q.message.photo:
+                await q.message.delete()
+                await q.message.chat.send_message(f"Top Up ${context.user_data['topup_amount']} - Choose method:", reply_markup=InlineKeyboardMarkup(kb))
+            else:
+                await q.edit_message_text(f"Top Up ${context.user_data['topup_amount']} - Choose method:", reply_markup=InlineKeyboardMarkup(kb))
+        except: pass
+        return
     if d.startswith("topup_method_"):
         method=d.replace("topup_method_",""); amount=context.user_data.get("topup_amount","20"); order_id=gen_id()
         orders=load_json(ORDERS_FILE,[]); orders.append({"order_id":order_id,"user_id":uid,"username":username,"product":f"TOPUP ${amount}","price":amount,"method":method,"status":"pending"}); save_json(ORDERS_FILE,orders)
-        if method=="btc": await q.message.reply_text(f"Order {order_id} - ${amount} BTC: {BTC_WALLET}")
-        else: await q.message.reply_text(f"Order {order_id} - ${amount} CashApp: {CASHAPP_TAG} Note: {order_id}")
+        if method=="btc": await q.message.chat.send_message(f"Order {order_id} - ${amount} BTC: {BTC_WALLET}")
+        else: await q.message.chat.send_message(f"Order {order_id} - ${amount} CashApp: {CASHAPP_TAG} Note: {order_id}")
         return
     if d.startswith("cartdel_"):
         idx=int(d.replace("cartdel_","")); carts=load_json(CARTS_FILE,{}); s=str(uid)
@@ -303,19 +382,25 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if d=="cartclear": clear_cart(uid); await show_cart(q,uid); return
     if d.startswith("cartpay_"):
         method=d.replace("cartpay_",""); cart=get_cart(uid)
-        if not cart: await q.edit_message_text("Cart empty"); return
+        if not cart:
+            try:
+                if q.message.photo: await q.message.delete()
+                await q.message.chat.send_message("Cart empty")
+            except: pass
+            return
         total=sum(safe_float(it.get("total",0)) for it in cart); order_id=gen_id()
         orders=load_json(ORDERS_FILE,[]); item_list="\n".join([f"- {it['name']} {it.get('option','')} x{it['qty']} = ${safe_float(it['total']):.2f}" for it in cart])
         orders.append({"order_id":order_id,"user_id":uid,"username":username,"product":f"CART {len(cart)} items","price":total,"method":method,"status":"pending","items":cart,"total":total}); save_json(ORDERS_FILE,orders)
         if method=="bal":
-            if get_user(uid).get("balance",0)<total: await q.message.reply_text(f"Need ${total:.2f}"); return
+            if get_user(uid).get("balance",0)<total:
+                await q.message.chat.send_message(f"Need ${total:.2f}"); return
             new_bal=deduct_balance(uid,total); clear_cart(uid)
             u=get_user(uid); inc_text=f" +{int(total//10*3)}% loyalty!" if total>=10 else ""
-            await q.message.reply_text(f"✅ CART PAID ${total:.2f} Order {order_id}{inc_text}\n{item_list}\nNew Bal ${new_bal:.2f}\nLoyalty: {u.get('loyalty',0)}% [{get_loyalty_title(u.get('loyalty',0))}]")
+            await q.message.chat.send_message(f"✅ CART PAID ${total:.2f} Order {order_id}{inc_text}\n{item_list}\nNew Bal ${new_bal:.2f}\nLoyalty: {u.get('loyalty',0)}% [{get_loyalty_title(u.get('loyalty',0))}]")
         elif method=="btc":
-            clear_cart(uid); await q.message.reply_text(f"Order {order_id} ${total:.2f} BTC: {BTC_WALLET}")
+            clear_cart(uid); await q.message.chat.send_message(f"Order {order_id} ${total:.2f} BTC: {BTC_WALLET}")
         else:
-            clear_cart(uid); await q.message.reply_text(f"Order {order_id} ${total:.2f} CashApp: {CASHAPP_TAG}")
+            clear_cart(uid); await q.message.chat.send_message(f"Order {order_id} ${total:.2f} CashApp: {CASHAPP_TAG}")
         return
     if d.startswith("view_"):
         parts=d.replace("view_","").rsplit("_",1); cat_id=parts[0]; idx=int(parts[1])
@@ -373,7 +458,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         orders=load_json(ORDERS_FILE,[]); orders.append({"order_id":order_id,"user_id":uid,"username":username,"product":prod["name"],"price":unit,"quantity":qty,"total":total,"selected_option":opt,"selected_price":unit,"category":cat_id,"product_idx":idx,"method":"buynow","status":"pending"}); save_json(ORDERS_FILE,orders)
         txt=f"*{prod['name']}* {opt} x{qty} = *${total:.2f}* Order `{order_id}`"
         kb=[[InlineKeyboardButton(f"${total:.2f} Pay",callback_data=f"paybalnow_{order_id}")],[InlineKeyboardButton(f"BTC",callback_data=f"paybtcnow_{order_id}"),InlineKeyboardButton(f"Cash",callback_data=f"paycashnow_{order_id}")],[InlineKeyboardButton("Back",callback_data=f"cat_{cat_id}")]]
-        await q.message.reply_text(txt, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb)); return
+        await q.message.chat.send_message(txt, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb)); return
     if d.startswith("paybalnow_") or d.startswith("paybtcnow_") or d.startswith("paycashnow_"):
         order_id=d.split("_",1)[1].replace("balnow_","").replace("btcnow_","").replace("cashnow_",""); method="bal" if "balnow" in d else "btc" if "btcnow" in d else "cash"
         orders=load_json(ORDERS_FILE,[])
@@ -381,12 +466,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if o["order_id"]==order_id:
                 total=safe_float(o.get("total",0))
                 if method=="bal":
-                    if get_user(uid).get("balance",0)<total: await q.message.reply_text(f"Need ${total:.2f}"); return
+                    if get_user(uid).get("balance",0)<total:
+                        await q.message.chat.send_message(f"Need ${total:.2f}"); return
                     new_bal=deduct_balance(uid,total); o["status"]="approved"; save_json(ORDERS_FILE,orders)
                     u=get_user(uid)
-                    await q.message.reply_text(f"✅ SUCCESS {order_id} ${total:.2f} New Bal ${new_bal:.2f}\n⭐ Loyalty: {u.get('loyalty',0)}% [{get_loyalty_title(u.get('loyalty',0))}]")
-                elif method=="btc": await q.message.reply_text(f"Order {order_id} ${total:.2f} BTC: {BTC_WALLET}")
-                else: await q.message.reply_text(f"Order {order_id} ${total:.2f} CashApp: {CASHAPP_TAG}")
+                    await q.message.chat.send_message(f"✅ SUCCESS {order_id} ${total:.2f} New Bal ${new_bal:.2f}\n⭐ Loyalty: {u.get('loyalty',0)}% [{get_loyalty_title(u.get('loyalty',0))}]")
+                elif method=="btc": await q.message.chat.send_message(f"Order {order_id} ${total:.2f} BTC: {BTC_WALLET}")
+                else: await q.message.chat.send_message(f"Order {order_id} ${total:.2f} CashApp: {CASHAPP_TAG}")
                 break
         return
 
@@ -430,13 +516,20 @@ async def send_product_view(q,cat_id,idx,context,uid,added=False):
     img_url = prod.get("image") or prod.get("image_url")
     if img_url and is_url(img_url):
         try:
-            await q.message.reply_photo(photo=img_url, caption=text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
-            try: await q.delete()
+            # FIXED: delete old and send new photo properly
+            try: await q.message.delete()
             except: pass
+            await q.message.chat.send_photo(photo=img_url, caption=text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
             return
         except: pass
-    try: await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
-    except: await q.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+    try:
+        if q.message.photo:
+            await q.message.delete()
+            await q.message.chat.send_message(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+        else:
+            await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+    except:
+        await q.message.chat.send_message(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
 
 async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
@@ -484,7 +577,7 @@ async def del_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_json(cat["file"],prods)
         await context.bot.send_message(chat_id=ADMIN_ID, text=f"🗑️ Deleted #{idx}: {removed['name']} from {cat['name']}")
     except Exception as e:
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}\nUse /delproduct shop_high | 0")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}\nUse /delproduct shop_food | 0")
 
 async def add_image_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
