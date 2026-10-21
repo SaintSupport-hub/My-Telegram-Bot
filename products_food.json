@@ -6,5 +6,42 @@
     "min_qty": 1,
     "max_qty": 8423,
     "image": "https://i.postimg.cc/KYxxSkxY/857740573-1128107989677411-6964473594890638774-n.webp"
+  },
+  {
+    "name": "Dickey\u2019s BBQ Pit",
+    "price": "8.63",
+    "desc": "ADD to PASS 2 U or STORECARD [STACKABLE]",
+    "min_qty": 1,
+    "max_qty": 999,
+    "options": [
+      {
+        "name": "GIFTCARD IN-STORE [10$-20$]",
+        "price": 8.63,
+        "min_qty": null,
+        "max_qty": null,
+        "stock": null
+      },
+      {
+        "name": "GIFTCARD IN-STORE [30$-40$]",
+        "price": 15.2,
+        "min_qty": null,
+        "max_qty": null,
+        "stock": null
+      },
+      {
+        "name": "GIFTCARD IN-STORE [40$-50$]",
+        "price": 18.0,
+        "min_qty": null,
+        "max_qty": null,
+        "stock": null
+      },
+      {
+        "name": "GIFTCARD IN-STORE [50$-75$]",
+        "price": 22.15,
+        "min_qty": null,
+        "max_qty": null,
+        "stock": null
+      }
+    ]
   }
 ]
