@@ -26,147 +26,31 @@
     ]
   },
   {
-    "name": "Lowe\u2019s",
-    "price": "4.75",
-    "desc": "ALL CARDS COME WITH PIN CAN BE RESOLD OR USED INSTORE ONLINE AND STACKED\n\nONLINE CAN ONLY BE USED 1 TIME\n\nINSTORE CAN STACK UNLIMITED",
-    "min_qty": 5,
-    "max_qty": 28473,
-    "options": [
-      {
-        "name": "GIFTCARD REWARDS CODES [10$]",
-        "price": 4.75,
-        "min_qty": 5,
-        "max_qty": 28473,
-        "stock": null
-      },
-      {
-        "name": "GIFTCARD REWARDS CODE [10$]",
-        "price": 4.75,
-        "min_qty": 100,
-        "max_qty": 28473,
-        "stock": null
-      }
-    ],
-    "image": "https://i.postimg.cc/XYVmDDZT/857766638-1123688640023952-6068289515206143865-n.jpg"
-  },
-  {
-    "name": "Victoria\u2019s Secret",
-    "price": "4.25",
-    "desc": "Victoria secret + SC/CC\n\n1. login to vcitoira secret\u00a0\n\n2. add whatedo it for ver you want\u00a0\u00a0\n\n3. change shipping address to the address you want the stuff sent to checkout and wait until it shipped.",
-    "min_qty": 5,
-    "max_qty": 2819,
-    "options": [
-      {
-        "name": "Victoria\u2019s Secret [5$ REWARD CODES STACKABLE]",
-        "price": 2.1,
-        "min_qty": 5,
-        "max_qty": 2819,
-        "stock": null
-      },
-      {
-        "name": "Victoria\u2019s Secret [10$ REWARD CODES STACKABLE]",
-        "price": 4.25,
-        "min_qty": 3,
-        "max_qty": 2819,
-        "stock": null
-      }
-    ]
-  },
-  {
-    "name": "Cinemark",
-    "price": "8.30",
-    "desc": "The Fandango Method\nAfter buying the gift card:\n1. Go to Fandango.com\n2. Select a CINEMARK ONLY THEATER\n3. Go to checkout, press \u201cUse Giftcard or Promo Code\u201d\n4. Select Cinemark Giftcard\n5. Apply and enjoy your online checkout\n6.CASHOUT METHOD ORDER ON FANDANGO LATE WITH THE GIFTCARD\nSHOW UP LATE THEY WILL GIVE YOU CASH REFUND\u00a0\nCinemark Credits Method\n\n1. Open the Cinemark app or go to cinemark.com and log in\u00a0\n2. Go to checkout when buying tickets or concessions\u00a0\n3. Your available credits will show automatically\u00a0\n4. Select \u201capply credits\u201d to use them\u00a0\n5. Each credit covers one regular 2D ticket\u00a0\n6. For premium formats (XD, 3D, IMAX), pay the small upcharge\u00a0\n7. Complete your purchase\u2014online fees are waived for members\u00a0\n\nNote: Credits can also buy snacks at concessions\u2014just scan your QR code at checkout",
+    "name": "CHIME",
+    "price": "37",
+    "desc": "Chime + Login",
     "min_qty": 1,
     "max_qty": 999,
     "options": [
       {
-        "name": "Cinemark [PINLESS GIFTCARD - 20$-30$]",
-        "price": 8.3,
+        "name": "CHIME + [200$-300$]",
+        "price": 37.0,
         "min_qty": null,
         "max_qty": null,
         "stock": null
       },
       {
-        "name": "Cinemark [PINLESS GIFTCARD - 30$-50$]",
-        "price": 13.0,
+        "name": "CHIME + [500$-700$]",
+        "price": 62.5,
         "min_qty": null,
         "max_qty": null,
         "stock": null
       },
       {
-        "name": "Cinemark [PINLESS GIFTCARD - 50$-75$]",
-        "price": 25.17,
+        "name": "CHIME + [900$-1400$]",
+        "price": 109.0,
         "min_qty": null,
         "max_qty": null,
-        "stock": null
-      }
-    ],
-    "image": "https://i.postimg.cc/j5Jj9jW4/857424998-1090748143586544-4442898211412560371-n.jpg"
-  },
-  {
-    "name": "Hertz",
-    "price": "15",
-    "desc": "Hertz Points Method (Simple)\n1. Go to Hertz.com or open the app and log in\u00a0\n2. Enter your rental location, dates, and times\u00a0\n3. Check the box that says \u201cUse my Hertz Gold Plus Rewards points\u201d\u00a0\n4. Pick your car\n5. Review the total (points cover base rate\u2014taxes and fees you pay separate)\u00a0\n6. Complete the reservation\n7. Pick up and enjoy the free rental",
-    "min_qty": 1,
-    "max_qty": 999,
-    "options": [
-      {
-        "name": "Hertz + CC",
-        "price": 15.0,
-        "min_qty": null,
-        "max_qty": null,
-        "stock": null
-      },
-      {
-        "name": "Hertz + AMEX",
-        "price": 23.1,
-        "min_qty": null,
-        "max_qty": null,
-        "stock": null
-      },
-      {
-        "name": "Hertz + 1500-3000 Points",
-        "price": 35.17,
-        "min_qty": null,
-        "max_qty": null,
-        "stock": null
-      },
-      {
-        "name": "Hertz + 5000-7500 Points",
-        "price": 49.0,
-        "min_qty": null,
-        "max_qty": null,
-        "stock": null
-      },
-      {
-        "name": "Hertz + 5000-10000 Points",
-        "price": 66.0,
-        "min_qty": null,
-        "max_qty": null,
-        "stock": null
-      }
-    ],
-    "image": "https://i.postimg.cc/bvVGWMmq/861279233-1663525058725241-4397304912321929602-n.webp"
-  },
-  {
-    "name": "Victoria\u2019s Secret",
-    "price": "2.10",
-    "desc": "Victoria secret + SC/CC\n\n1. login to vcitoira secret\u00a0\n\n2. add whatedo it for ver you want\u00a0\u00a0\n\n3. change shipping address to the address you want the stuff sent to checkout and wait until it shipped.",
-    "min_qty": 5,
-    "max_qty": 2837,
-    "options": [
-      {
-        "name": "Victoria\u2019s Secret [5$ REWARD CODES STACKABLE]",
-        "price": 2.1,
-        "min_qty": 5,
-        "max_qty": 2837,
-        "stock": null
-      },
-      {
-        "name": "Victoria\u2019s Secret [10$ REWARD CODES STACKABLE]",
-        "price": 4.25,
-        "min_qty": 1,
-        "max_qty": 2837,
         "stock": null
       }
     ]
