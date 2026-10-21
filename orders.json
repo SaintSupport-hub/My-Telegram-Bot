@@ -51,18 +51,24 @@
     "status": "approved"
   },
   {
-    "order_id": "ORD-7MCK88",
+    "order_id": "ORD-YPKI3F",
     "user_id": 8362572817,
     "username": "Saintlocksupport",
-    "product": "Jimmy John\u2019s",
+    "product": "CART 1 items",
     "price": 8.37,
-    "quantity": 1,
-    "total": 8.37,
-    "selected_option": "",
-    "selected_price": 8.37,
-    "category": "shop_food",
-    "product_idx": 0,
-    "method": "buynow",
-    "status": "pending"
+    "method": "bal",
+    "status": "pending",
+    "items": [
+      {
+        "name": "Jimmy John\u2019s",
+        "category": "shop_food",
+        "product_idx": 0,
+        "option": "",
+        "unit_price": 8.37,
+        "qty": 1,
+        "total": 8.37
+      }
+    ],
+    "total": 8.37
   }
 ]
