@@ -191,7 +191,7 @@ def is_url(s):
 
 app=Flask(__name__)
 @app.route("/")
-def home(): return "LIVE - TEES FIXED WITH BUTTONS"
+def home(): return "LIVE - TEES FIXED"
 def run_web(): app.run(host="0.0.0.0",port=int(os.environ.get("PORT",10000)))
 def is_admin(uid): return uid==ADMIN_ID
 async def post_init(app): await app.bot.set_my_commands([BotCommand("start","Open Shop Menu")])
@@ -211,12 +211,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if cid in cat_map:
             c=cat_map[cid]
             kb.append([InlineKeyboardButton(c["name"], callback_data=f"cat_{c['id']}")])
-    kb.append([InlineKeyboardButton(f"🛒 {count}", callback_data="viewcart"), InlineKeyboardButton(f"💰", callback_data="balance"), InlineKeyboardButton(f"📞", callback_data="support")])
+    kb.append([InlineKeyboardButton(f"🛒 {count}", callback_data="viewcart"), InlineKeyboardButton("💰", callback_data="balance"), InlineKeyboardButton("📞", callback_data="support")])
     await update.message.reply_text(caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
 
 async def show_balance(q,uid):
     u=get_user(uid); bal=u.get("balance",0); loy=u.get("loyalty",0); title=get_loyalty_title(loy)
-    txt=f"💰 Balance: ${bal:.2f}\n⭐ Loyalty: {loy}% [{title}]\nSpent: ${u.get('total_spent',0):.2f}\n\nNext title at {((loy//25)+1)*25}%"
+    txt=f"💰 Balance: ${bal:.2f}\n⭐ Loyalty: {loy}% [{title}]\nSpent: ${u.get('total_spent',0):.2f}"
     kb=[[InlineKeyboardButton("Top Up",callback_data="topup_choose")],[InlineKeyboardButton("Back",callback_data="back")]]
     await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb))
 
@@ -228,21 +228,20 @@ async def show_category(q,cat_id,is_admin_view=False):
             return
         products=load_json(cat["file"],[])
         if not products:
-            await q.edit_message_text(f"🔴 {cat['name']} is empty\n/addproduct {cat_id} | Name | Price | Desc", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
+            await q.edit_message_text(f"🔴 {cat['name']} is empty", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
             return
         kb=[]
         for i,p in enumerate(products):
             fp=safe_float(p.get("price",0))
             for o in p.get("options",[]):
                 if o.get("price") is not None:
-                    try:
-                        fv=safe_float(o.get("price"), fp)
-                        if fv < fp or fp==0: fp=fv
-                    except: pass
-            # FIXED: every category including shop_tees gets clickable buttons
-            kb.append([InlineKeyboardButton(f"{p['name']} - ${fp:.2f}",callback_data=f"view_{cat_id}_{i}")])
+                    fv=safe_float(o.get("price"), fp)
+                    if fv < fp or fp==0: fp=fv
+            btn_text = f"{p['name']} - ${fp:.2f}"
+            cb = f"view_{cat_id}_{i}"
+            kb.append([InlineKeyboardButton(btn_text, callback_data=cb)])
         kb.append([InlineKeyboardButton("Back",callback_data="back")])
-        await q.edit_message_text(f"⚫ *{cat['name']}* - {len(products)} items\nTap a product to buy:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+        await q.edit_message_text(f"⚫ *{cat['name']}* - {len(products)} items\nTap to buy:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
     except Exception as e:
         await q.edit_message_text(f"Error in {cat_id}: {e}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
 
@@ -252,12 +251,18 @@ async def show_cart(q,uid):
         await q.edit_message_text("🛒 Cart is empty.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back",callback_data="back")]]))
         return
     total=sum(safe_float(it.get("total",0)) for it in cart)
-    lines=[f"{idx+1}. {it['name']} {it.get('option','')} x{it['qty']} = ${safe_float(it['total']):.2f}" for idx,it in enumerate(cart)]
+    lines=[]
+    for idx,it in enumerate(cart):
+        lines.append(f"{idx+1}. {it['name']} {it.get('option','')} x{it['qty']} = ${safe_float(it['total']):.2f}")
     txt="🛒 *Your Cart*\n\n"+"\n".join(lines)+f"\n\n*Total: ${total:.2f}*"
-    kb=[[InlineKeyboardButton(f"❌ {idx+1}",callback_data=f"cartdel_{idx}") ] for idx in range(len(cart))]
+    kb=[]
+    row=[]
+    for idx in range(len(cart)):
+        row.append(InlineKeyboardButton(f"❌ {idx+1}",callback_data=f"cartdel_{idx}"))
+    if row: kb.append(row)
     kb.append([InlineKeyboardButton("Clear",callback_data="cartclear")])
     kb.append([InlineKeyboardButton(f"${total:.2f} Pay",callback_data="cartpay_bal")])
-    kb.append([InlineKeyboardButton(f"BTC",callback_data="cartpay_btc"), InlineKeyboardButton(f"Cash",callback_data="cartpay_cash")])
+    kb.append([InlineKeyboardButton("BTC",callback_data="cartpay_btc"), InlineKeyboardButton("Cash",callback_data="cartpay_cash")])
     kb.append([InlineKeyboardButton("Back",callback_data="back")])
     await q.edit_message_text(txt, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
 
@@ -266,7 +271,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try: await q.answer()
     except: pass
     d=q.data; uid=q.from_user.id; username=q.from_user.username or "no_username"
-    # EXPLICIT FIX FOR ALL MAIN BUTTONS
     if d=="cat_shop_low":
         await show_category(q,"shop_low", is_admin_view=is_admin(uid)); return
     if d=="cat_shop_high":
@@ -283,7 +287,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except: await q.message.reply_text("💳 Shop CC - Choose Type:", reply_markup=InlineKeyboardMarkup(kb))
         return
     if d.startswith("cat_"):
-        await show_category(q,d.replace("cat_",""), is_admin_view=is_admin(uid)); return
+        cid = d.replace("cat_","")
+        await show_category(q,cid, is_admin_view=is_admin(uid)); return
     if d=="back":
         cats=get_categories(); total,count=get_cart_total(uid)
         u=get_user(uid); loy=u.get("loyalty",0); title=get_loyalty_title(loy)
@@ -295,7 +300,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if cid in cat_map:
                 c=cat_map[cid]
                 kb.append([InlineKeyboardButton(c["name"], callback_data=f"cat_{c['id']}")])
-        kb.append([InlineKeyboardButton(f"🛒 {count}",callback_data="viewcart"), InlineKeyboardButton(f"💰",callback_data="balance"), InlineKeyboardButton(f"📞",callback_data="support")])
+        kb.append([InlineKeyboardButton(f"🛒 {count}",callback_data="viewcart"), InlineKeyboardButton("💰",callback_data="balance"), InlineKeyboardButton("📞",callback_data="support")])
         await q.edit_message_text(header, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb)); return
     if d=="balance": await show_balance(q,uid); return
     if d=="viewcart": await show_cart(q,uid); return
@@ -306,9 +311,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb=[[InlineKeyboardButton("$10",callback_data="topup_amount_10"),InlineKeyboardButton("$20",callback_data="topup_amount_20")],[InlineKeyboardButton("$50",callback_data="topup_amount_50"),InlineKeyboardButton("$100",callback_data="topup_amount_100")],[InlineKeyboardButton("Back",callback_data="balance")]]
         await q.edit_message_text("Choose Top Up amount:", reply_markup=InlineKeyboardMarkup(kb)); return
     if d.startswith("topup_amount_"):
-        context.user_data["topup_amount"]=d.replace("topup_amount_","")
+        amt = d.replace("topup_amount_","")
+        context.user_data["topup_amount"]=amt
         kb=[[InlineKeyboardButton("BTC",callback_data="topup_method_btc"),InlineKeyboardButton("CashApp",callback_data="topup_method_cash")]]
-        await q.edit_message_text(f"Top Up ${context.user_data['topup_amount']} - Choose method:", reply_markup=InlineKeyboardMarkup(kb)); return
+        await q.edit_message_text(f"Top Up ${amt} - Choose method:", reply_markup=InlineKeyboardMarkup(kb)); return
     if d.startswith("topup_method_"):
         method=d.replace("topup_method_",""); amount=context.user_data.get("topup_amount","20"); order_id=gen_id()
         orders=load_json(ORDERS_FILE,[]); orders.append({"order_id":order_id,"user_id":uid,"username":username,"product":f"TOPUP ${amount}","price":amount,"method":method,"status":"pending"}); save_json(ORDERS_FILE,orders)
@@ -324,34 +330,312 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         method=d.replace("cartpay_",""); cart=get_cart(uid)
         if not cart: await q.edit_message_text("Cart empty"); return
         total=sum(safe_float(it.get("total",0)) for it in cart); order_id=gen_id()
-        orders=load_json(ORDERS_FILE,[]); item_list="\n".join([f"- {it['name']} {it.get('option','')} x{it['qty']} = ${safe_float(it['total']):.2f}" for it in cart])
-        orders.append({"order_id":order_id,"user_id":uid,"username":username,"product":f"CART {len(cart)} items","price":total,"method":method,"status":"pending","items":cart,"total":total}); save_json(ORDERS_FILE,orders)
+        orders=load_json(ORDERS_FILE,[]); orders.append({"order_id":order_id,"user_id":uid,"username":username,"product":f"CART {len(cart)} items","price":total,"method":method,"status":"pending","items":cart,"total":total}); save_json(ORDERS_FILE,orders)
         if method=="bal":
             if get_user(uid).get("balance",0)<total: await q.message.reply_text(f"Need ${total:.2f}"); return
             new_bal=deduct_balance(uid,total); clear_cart(uid)
-            u=get_user(uid); inc_text=f" +{int(total//10*3)}% loyalty!" if total>=10 else ""
-            await q.message.reply_text(f"✅ CART PAID ${total:.2f} Order {order_id}{inc_text}\n{item_list}\nNew Bal ${new_bal:.2f}\nLoyalty: {u.get('loyalty',0)}% [{get_loyalty_title(u.get('loyalty',0))}]")
+            u=get_user(uid)
+            await q.message.reply_text(f"✅ CART PAID ${total:.2f} Order {order_id}\nNew Bal ${new_bal:.2f}")
         elif method=="btc":
             clear_cart(uid); await q.message.reply_text(f"Order {order_id} ${total:.2f} BTC: {BTC_WALLET}")
         else:
             clear_cart(uid); await q.message.reply_text(f"Order {order_id} ${total:.2f} CashApp: {CASHAPP_TAG}")
         return
     if d.startswith("view_"):
-        parts=d.replace("view_","").rsplit("_",1); cat_id=parts[0]; idx=int(parts[1])
-        cat=get_cat_by_id(cat_id); p=load_json(cat["file"],[])[idx]
-        context.user_data[f"qty_{cat_id}_{idx}"]=int(p.get("min_qty",1))
-        context.user_data[f"opt_{cat_id}_{idx}"]=""; context.user_data[f"optprice_{cat_id}_{idx}"]=safe_float(p.get("price",0))
+        tmp = d.replace("view_","")
+        cat_id, idx_str = tmp.rsplit("_",1)
+        idx = int(idx_str)
+        cat=get_cat_by_id(cat_id)
+        plist = load_json(cat["file"],[])
+        p = plist[idx]
+        k1 = f"qty_{cat_id}_{idx}"
+        k2 = f"opt_{cat_id}_{idx}"
+        k3 = f"optprice_{cat_id}_{idx}"
+        context.user_data[k1]=int(p.get("min_qty",1))
+        context.user_data[k2]=""
+        context.user_data[k3]=safe_float(p.get("price",0))
         context.user_data[f"optmin_{cat_id}_{idx}"]=p.get("min_qty")
         context.user_data[f"optmax_{cat_id}_{idx}"]=p.get("max_qty")
         await send_product_view(q,cat_id,idx,context,uid); return
     if d.startswith("seloptview_"):
-        rest=d.replace("seloptview_",""); cat_part,idx_part,opt_name=rest.split("|",2); cat_id=cat_part; idx=int(idx_part)
-        cat=get_cat_by_id(cat_id); prod=load_json(cat["file"],[])[idx]
+        rest=d.replace("seloptview_","")
+        parts = rest.split("|",2)
+        cat_id = parts[0]
+        idx = int(parts[1])
+        opt_name = parts[2]
+        cat=get_cat_by_id(cat_id)
+        prod=load_json(cat["file"],[])[idx]
         opt_obj=None
         for o in prod.get("options",[]):
             if o["name"]==opt_name: opt_obj=o; break
-        price=safe_float(prod.get("price",0)) if not opt_obj or opt_obj.get("price") is None else safe_float(opt_obj.get("price",0))
+        if not opt_obj or opt_obj.get("price") is None:
+            price = safe_float(prod.get("price",0))
+        else:
+            price = safe_float(opt_obj.get("price",0))
         min_q = opt_obj.get("min_qty") if opt_obj and opt_obj.get("min_qty") is not None else int(prod.get("min_qty",1))
         context.user_data[f"opt_{cat_id}_{idx}"]=opt_name
         context.user_data[f"optprice_{cat_id}_{idx}"]=price
-        context.user_data[f"
+        context.user_data[f"qty_{cat_id}_{idx}"]=min_q
+        context.user_data[f"optmin_{cat_id}_{idx}"]=opt_obj.get("min_qty") if opt_obj else None
+        context.user_data[f"optmax_{cat_id}_{idx}"]=opt_obj.get("max_qty") if opt_obj else None
+        context.user_data[f"optstock_{cat_id}_{idx}"]=opt_obj.get("stock") if opt_obj else None
+        await send_product_view(q,cat_id,idx,context,uid); return
+    if d.startswith("qtyviewminus_") or d.startswith("qtyviewplus_"):
+        is_plus = d.startswith("qtyviewplus_")
+        rest = d.replace("qtyviewminus_","").replace("qtyviewplus_","")
+        cat_id, idx_str = rest.rsplit("|",1)
+        idx = int(idx_str)
+        cat=get_cat_by_id(cat_id); prod=load_json(cat["file"],[])[idx]
+        opt_min = context.user_data.get(f"optmin_{cat_id}_{idx}")
+        opt_max = context.user_data.get(f"optmax_{cat_id}_{idx}")
+        opt_stock = context.user_data.get(f"optstock_{cat_id}_{idx}")
+        min_q = int(opt_min) if opt_min is not None else int(prod.get("min_qty",1))
+        max_q = int(opt_max) if opt_max is not None else int(prod.get("max_qty",999))
+        if opt_stock is not None: max_q = min(max_q, int(opt_stock))
+        key = f"qty_{cat_id}_{idx}"
+        qty = int(context.user_data.get(key,min_q))
+        if is_plus:
+            if qty<max_q: qty+=1
+            else: await q.answer(f"Max is {max_q}", show_alert=True); return
+        else:
+            if qty>min_q: qty-=1
+            else: await q.answer(f"Min is {min_q}", show_alert=True); return
+        context.user_data[key]=qty; await send_product_view(q,cat_id,idx,context,uid); return
+    if d.startswith("addcart_"):
+        rest=d.replace("addcart_","")
+        cat_id, idx_str = rest.rsplit("|",1)
+        idx=int(idx_str)
+        cat=get_cat_by_id(cat_id); prod=load_json(cat["file"],[])[idx]
+        qty_key = f"qty_{cat_id}_{idx}"
+        qty=int(context.user_data.get(qty_key, int(prod.get("min_qty",1))))
+        opt=context.user_data.get(f"opt_{cat_id}_{idx}","")
+        unit=safe_float(context.user_data.get(f"optprice_{cat_id}_{idx}", safe_float(prod.get("price",0))))
+        total=unit*qty
+        item={"name":prod["name"],"category":cat_id,"product_idx":idx,"option":opt,"unit_price":unit,"qty":qty,"total":total}
+        count=add_to_cart(uid,item); await q.answer(f"Added! 🛒 {count}"); await send_product_view(q,cat_id,idx,context,uid,added=True); return
+    if d.startswith("buynow_"):
+        rest=d.replace("buynow_","")
+        cat_id, idx_str = rest.rsplit("|",1)
+        idx=int(idx_str)
+        cat=get_cat_by_id(cat_id); prod=load_json(cat["file"],[])[idx]
+        qty=int(context.user_data.get(f"qty_{cat_id}_{idx}", int(prod.get("min_qty",1))))
+        opt=context.user_data.get(f"opt_{cat_id}_{idx}","")
+        unit=safe_float(context.user_data.get(f"optprice_{cat_id}_{idx}", safe_float(prod.get("price",0))))
+        total=unit*qty; order_id=gen_id()
+        orders=load_json(ORDERS_FILE,[]); orders.append({"order_id":order_id,"user_id":uid,"username":username,"product":prod["name"],"price":unit,"quantity":qty,"total":total,"selected_option":opt,"selected_price":unit,"category":cat_id,"product_idx":idx,"method":"buynow","status":"pending"}); save_json(ORDERS_FILE,orders)
+        txt=f"*{prod['name']}* {opt} x{qty} = *${total:.2f}* Order `{order_id}`"
+        kb=[[InlineKeyboardButton(f"${total:.2f} Pay",callback_data=f"paybalnow_{order_id}")],[InlineKeyboardButton("BTC",callback_data=f"paybtcnow_{order_id}"),InlineKeyboardButton("Cash",callback_data=f"paycashnow_{order_id}")],[InlineKeyboardButton("Back",callback_data=f"cat_{cat_id}")]]
+        await q.message.reply_text(txt, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb)); return
+    if d.startswith("paybalnow_") or d.startswith("paybtcnow_") or d.startswith("paycashnow_"):
+        order_id = d.split("_",1)[1].replace("balnow_","").replace("btcnow_","").replace("cashnow_","")
+        method="bal" if "balnow" in d else "btc" if "btcnow" in d else "cash"
+        orders=load_json(ORDERS_FILE,[])
+        for o in orders:
+            if o["order_id"]==order_id:
+                total=safe_float(o.get("total",0))
+                if method=="bal":
+                    if get_user(uid).get("balance",0)<total: await q.message.reply_text(f"Need ${total:.2f}"); return
+                    new_bal=deduct_balance(uid,total); o["status"]="approved"; save_json(ORDERS_FILE,orders)
+                    u=get_user(uid)
+                    await q.message.reply_text(f"✅ SUCCESS {order_id} ${total:.2f} New Bal ${new_bal:.2f}")
+                elif method=="btc": await q.message.reply_text(f"Order {order_id} ${total:.2f} BTC: {BTC_WALLET}")
+                else: await q.message.reply_text(f"Order {order_id} ${total:.2f} CashApp: {CASHAPP_TAG}")
+                break
+        return
+
+async def send_product_view(q,cat_id,idx,context,uid,added=False):
+    cat=get_cat_by_id(cat_id); prod=load_json(cat["file"],[])[idx]
+    min_q=int(prod.get("min_qty",1)); max_q=int(prod.get("max_qty",999))
+    qty_key = f"qty_{cat_id}_{idx}"
+    qty=int(context.user_data.get(qty_key,min_q))
+    opt=context.user_data.get(f"opt_{cat_id}_{idx}","")
+    unit=safe_float(context.user_data.get(f"optprice_{cat_id}_{idx}", safe_float(prod.get("price",0))))
+    opt_min=context.user_data.get(f"optmin_{cat_id}_{idx}")
+    opt_max=context.user_data.get(f"optmax_{cat_id}_{idx}")
+    cur_min = int(opt_min) if opt_min is not None else min_q
+    cur_max = int(opt_max) if opt_max is not None else max_q
+    all_prices=[safe_float(prod.get("price",0))]
+    for o in prod.get("options",[]):
+        if o.get("price") is not None: all_prices.append(safe_float(o.get("price"),0))
+    from_price=min([p for p in all_prices if p>0] or [0])
+    total=unit*qty
+    options=prod.get("options",[])
+    if options and not opt:
+        price_line = f"From ${from_price:.2f}"
+        qty_line = f"Min: {cur_min}"
+    else:
+        price_line = f"${unit:.2f} each"
+        qty_line = f"Min {cur_min} | Qty: {qty} = ${total:.2f}"
+    sel_text=f"\n🔴 Selected: {opt} - ${unit:.2f}" if opt else f"\n🔴 {price_line}"
+    added_text="\n\n✅ Added to 🛒!" if added else ""
+    text=f"⚫ *{prod['name']}*{sel_text}\n\n📝 {prod['desc']}\n\n{qty_line}\nTotal: *${total:.2f}*{added_text}"
+    kb=[]
+    if options:
+        for o in options:
+            oname = o.get('name','')
+            oprice = safe_float(o.get('price',0)) if o.get('price') is not None else 0
+            price_show = f" ${oprice:.2f}" if o.get('price') is not None else ""
+            kb.append([InlineKeyboardButton(f"{oname}{price_show}", callback_data=f"seloptview_{cat_id}|{idx}|{oname}")])
+    kb.append([InlineKeyboardButton("➖",callback_data=f"qtyviewminus_{cat_id}|{idx}"), InlineKeyboardButton(f"{qty}",callback_data="noop"), InlineKeyboardButton("➕",callback_data=f"qtyviewplus_{cat_id}|{idx}")])
+    kb.append([InlineKeyboardButton(f"🛒 Add {qty} = ${total:.2f}",callback_data=f"addcart_{cat_id}|{idx}")])
+    kb.append([InlineKeyboardButton(f"⚡ Buy {qty} = ${total:.2f}",callback_data=f"buynow_{cat_id}|{idx}")])
+    kb.append([InlineKeyboardButton(f"🛒 {get_cart_total(uid)[1]}",callback_data="viewcart"), InlineKeyboardButton("Back",callback_data=f"cat_{cat_id}")])
+    img_url = prod.get("image") or prod.get("image_url")
+    if img_url and is_url(img_url):
+        try:
+            await q.message.reply_photo(photo=img_url, caption=text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+            try: await q.delete()
+            except: pass
+            return
+        except: pass
+    try: await q.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+    except: await q.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+
+async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    try:
+        raw=update.message.text.split(" ",1)[1] if " " in update.message.text else ""
+        if "|" not in raw: await context.bot.send_message(chat_id=ADMIN_ID, text="Use /addproduct cat | Name | Price | Desc | Options | Min:Max | ImageURL"); return
+        parts=[x.strip() for x in raw.split("|")]
+        cat_id=parts[0].lower(); name=parts[1] if len(parts)>1 else ""; price=parts[2] if len(parts)>2 else "0"; desc=parts[3] if len(parts)>3 else ""
+        options_raw=""; minmax_raw=""; image_url=""
+        if len(parts)==5:
+            if is_url(parts[4]): image_url=parts[4]
+            elif is_minmax_string(parts[4]): minmax_raw=parts[4]
+            else: options_raw=parts[4]
+        elif len(parts)==6:
+            if is_url(parts[5]):
+                if is_minmax_string(parts[4]): minmax_raw=parts[4]; image_url=parts[5]
+                else: options_raw=parts[4]; image_url=parts[5]
+            else:
+                options_raw=parts[4]; minmax_raw=parts[5]
+        elif len(parts)>=7:
+            options_raw=parts[4]; minmax_raw=parts[5]; image_url=parts[6]
+        options=parse_options_string(options_raw)
+        min_q,max_q=parse_minmax_string(minmax_raw) if minmax_raw else (1,999)
+        cat=get_cat_by_id(cat_id); prods=load_json(cat["file"],[])
+        new_prod={"name":name,"price":price.replace("$",""),"desc":desc,"min_qty":min_q,"max_qty":max_q}
+        if options: new_prod["options"]=options
+        if image_url and is_url(image_url): new_prod["image"]=image_url
+        prods.append(new_prod); save_json(cat["file"],prods)
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"✅ Saved '{name}'")
+    except Exception as e: await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}")
+
+async def del_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    try:
+        raw=update.message.text.split(" ",1)[1]
+        cat_id, idx_str = [x.strip() for x in raw.split("|")]
+        idx=int(idx_str)
+        cat=get_cat_by_id(cat_id.lower())
+        prods=load_json(cat["file"],[])
+        removed=prods.pop(idx)
+        save_json(cat["file"],prods)
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"🗑️ Deleted #{idx}: {removed['name']} from {cat['name']}")
+    except Exception as e:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}\nUse /delproduct shop_tees | 0")
+
+async def add_image_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    try:
+        raw=update.message.text.split(" ",1)[1]
+        parts=[x.strip() for x in raw.split("|")]
+        cat_id=parts[0].lower(); idx=int(parts[1]); url=parts[2]
+        cat=get_cat_by_id(cat_id); prods=load_json(cat["file"],[])
+        prods[idx]["image"]=url; save_json(cat["file"],prods)
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"✅ Added image to {prods[idx]['name']}")
+    except Exception as e: await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error /addimage cat | idx | url - {e}")
+
+async def set_quantity_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    try:
+        raw=update.message.text.split(" ",1)[1]; cat_id,idx,minmax_raw=[x.strip() for x in raw.split("|",2)]; idx=int(idx)
+        min_q,max_q=parse_minmax_string(minmax_raw); cat=get_cat_by_id(cat_id.lower()); prods=load_json(cat["file"],[]); prods[idx]["min_qty"]=min_q; prods[idx]["max_qty"]=max_q; save_json(cat["file"],prods)
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Set qty {prods[idx]['name']}: Min {min_q} Max {max_q}")
+    except Exception as e: await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}")
+async def add_options_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    try:
+        raw=update.message.text.split(" ",1)[1]; cat_id,idx,opts_raw=[x.strip() for x in raw.split("|",2)]; idx=int(idx)
+        options=parse_options_string(opts_raw); cat=get_cat_by_id(cat_id.lower()); prods=load_json(cat["file"],[]); prods[idx]["options"]=options; save_json(cat["file"],prods)
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Added options")
+    except Exception as e: await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}")
+async def edit_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    try:
+        raw=update.message.text.split(" ",1)[1]; parts=[x.strip() for x in raw.split("|")]
+        cat_id=parts[0].lower(); idx=int(parts[1]); name=parts[2]; price=parts[3]; desc=parts[4]
+        options_raw=parts[5] if len(parts)>5 else ""; minmax_raw=parts[6] if len(parts)>6 else ""; image_url=parts[7] if len(parts)>7 else ""
+        cat=get_cat_by_id(cat_id); prods=load_json(cat["file"],[]); old=prods[idx]
+        new_data={"name":name,"price":price.replace("$",""),"desc":desc,"min_qty":old.get("min_qty",1),"max_qty":old.get("max_qty",999)}
+        if options_raw: new_data["options"]=parse_options_string(options_raw)
+        else:
+            if "options" in old: new_data["options"]=old["options"]
+        if minmax_raw: min_q,max_q=parse_minmax_string(minmax_raw); new_data["min_qty"]=min_q; new_data["max_qty"]=max_q
+        if image_url and is_url(image_url): new_data["image"]=image_url
+        elif "image" in old: new_data["image"]=old["image"]
+        prods[idx]=new_data; save_json(cat["file"],prods)
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Edited #{idx}")
+    except Exception as e: await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}")
+async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    cat_id=update.message.text.split(" ",1)[1].strip().lower() if len(update.message.text.split())>1 else "shop_low"
+    cat=get_cat_by_id(cat_id); prods=load_json(cat["file"],[]); txt="\n".join([f"{i}: {p['name']} - ${safe_float(p.get('price',0)):.2f}" for i,p in enumerate(prods)])
+    await context.bot.send_message(chat_id=ADMIN_ID, text=f"{cat['name']} {len(prods)}:\n{txt[:3500]}")
+async def add_balance_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    try:
+        raw=update.message.text.split(" ",1)[1]; uid_str,amt=[x.strip() for x in raw.split("|")]; new_bal=add_balance(int(uid_str) if uid_str.isdigit() else uid_str,float(amt))
+        u=get_user(int(uid_str) if uid_str.isdigit() else uid_str)
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Added ${amt} to {uid_str} - ${new_bal:.2f}")
+    except Exception as e: await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}")
+async def saveall_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    cats=get_categories(); files=[CATEGORIES_FILE,ORDERS_FILE,USERS_FILE,CARTS_FILE]+[c["file"] for c in cats]
+    saved=[]
+    for f in set(files):
+        if os.path.exists(f):
+            try:
+                with open(f,"r") as file: data=json.load(file)
+                save_json(f,data); saved.append(f)
+            except: pass
+    await context.bot.send_message(chat_id=ADMIN_ID, text=f"Force saved {len(saved)}: {', '.join(saved)}")
+
+def run_bot():
+    b=ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
+    b.add_handler(CommandHandler("start",start))
+    b.add_handler(CommandHandler("addproduct",add_product))
+    b.add_handler(CommandHandler("addimage",add_image_cmd))
+    b.add_handler(CommandHandler("addoptions",add_options_cmd))
+    b.add_handler(CommandHandler("setquantity",set_quantity_cmd))
+    b.add_handler(CommandHandler("editproduct",edit_product))
+    b.add_handler(CommandHandler("listproducts",list_products))
+    b.add_handler(CommandHandler("addbalance",add_balance_cmd))
+    b.add_handler(CommandHandler("saveall",saveall_cmd))
+    b.add_handler(CommandHandler("delproduct",del_product))
+    b.add_handler(CallbackQueryHandler(button_handler))
+    b.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u,c: None))
+    b.run_polling(drop_pending_updates=True)
+
+if __name__=="__main__":
+    threading.Thread(target=run_web,daemon=True).start()
+    threading.Thread(target=keep_alive_loop,daemon=True).start()
+    run_bot()
