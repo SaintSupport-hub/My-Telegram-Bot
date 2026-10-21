@@ -36,9 +36,8 @@ def safe_float(v, default=0.0):
     except: return default
 
 def gh_headers():
-    return {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+    return {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.【entity-github¦canonical_name=GitHub】.v3+json"}
 
-# === FIXED LOAD - GITHUB FIRST, LOCAL IS JUST CACHE ===
 def load_json(path, default):
     gh=None
     if GH_TOKEN:
@@ -57,7 +56,6 @@ def load_json(path, default):
         except: pass
     return default
 
-# === FIXED SAVE - WILL NEVER OVERWRITE 【entity-GITHUB¦canonical_name=GitHub】 WITH EMPTY ===
 def save_json(path,data):
     if isinstance(data, list) and len(data)==0:
         if GH_TOKEN:
@@ -67,7 +65,7 @@ def save_json(path,data):
                 if r.status_code==200:
                     gh=json.loads(base64.b64decode(r.json()["content"]).decode())
                     if isinstance(gh, list) and len(gh)>0:
-                        print(f"BLOCKED overwrite of {path} - GH has {len(gh)} items, local is empty")
+                        print(f"BLOCKED overwrite of {path} - GH has {len(gh)} items")
                         with open(path,"w") as f: json.dump(gh,f,indent=2)
                         return False
             except: pass
@@ -215,7 +213,7 @@ def is_url(s): return s.startswith("http://") or s.startswith("https://")
 
 app=Flask(__name__)
 @app.route("/")
-def home(): return "LIVE - NO DELETE FIX"
+def home(): return "LIVE - PUSHALL FIX"
 def run_web(): app.run(host="0.0.0.0",port=int(os.environ.get("PORT",10000)))
 def is_admin(uid): return uid==ADMIN_ID
 async def post_init(app): await app.bot.set_my_commands([BotCommand("start","Open Shop Menu")])
@@ -725,9 +723,52 @@ async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not cat:
         await context.bot.send_message(chat_id=ADMIN_ID, text=f"Category {cat_id} not found")
         return
-    prods=load_json(cat["file"],[]); txt="\n".join([f"{i}: {p['name']} - ${safe_float(p.get('price',0)):.2f} {'[IMG]' if p.get('image') else '[NO IMG]'}" for i,p in enumerate(prods)])
+    prods=load_json(cat["file"],[])
+    txt="\n".join([f"{i}: {p['name']} - ${safe_float(p.get('price',0)):.2f} {'[IMG]' if p.get('image') else '[NO IMG]'}" for i,p in enumerate(prods)])
     if not txt: txt="Empty"
-    await context.bot.send_message(chat_id=ADMIN_ID, text=f"{cat['name']} ({cat['file']}) {len(prods)}:\n{txt[:3500]}")
+    await context.bot.send_message(chat_id=ADMIN_ID, text=f"CAT: {cat['id']} -> FILE: {cat['file']}\nName: {cat['name']} {len(prods)}:\n{txt[:3500]}")
+
+async def fixcats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    cats = [
+        {"id": "shop", "name": "Shop CC", "file": "products.json"},
+        {"id": "shop_low", "name": "SHOP LOW % SNIFF [Med-Low Bal]", "file": "products_low.json"},
+        {"id": "shop_high", "name": "SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"},
+        {"id": "shop_tees", "name": "Shop Accounts", "file": "products_tees.json"},
+        {"id": "shop_food", "name": "Shop Food", "file": "products_food.json"},
+        {"id": "shop_accessories", "name": "Shop Accessories", "file": "products_accessories.json"}
+    ]
+    save_json(CATEGORIES_FILE, cats)
+    await context.bot.send_message(chat_id=ADMIN_ID, text="✅ FIXED CATEGORIES\nshop_tees (Shop Accounts) -> products_tees.json\nshop_accessories -> products_accessories.json")
+
+async def pushall_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    cats=get_categories()
+    files=[CATEGORIES_FILE,ORDERS_FILE,USERS_FILE,CARTS_FILE]+[c["file"] for c in cats]
+    out=[]
+    for f in set(files):
+        if os.path.exists(f):
+            try:
+                with open(f,"r") as file: data=json.load(file)
+                with open(f,"w") as wf: json.dump(data,wf,indent=2)
+                if GH_TOKEN:
+                    url=f"https://api.github.com/repos/{GH_REPO}/contents/{f}"
+                    r=requests.get(url, headers=gh_headers())
+                    sha=r.json().get("sha") if r.status_code==200 else None
+                    payload={"message":f"FORCE PUSH {f}","content":base64.b64encode(json.dumps(data,indent=2).encode()).decode()}
+                    if sha: payload["sha"]=sha
+                    resp=requests.put(url, headers=gh_headers(), json=payload, timeout=15)
+                    cnt=len(data) if isinstance(data,list) else len(data)
+                    out.append(f"{f}: {cnt} -> GH {resp.status_code}")
+                else:
+                    out.append(f"{f}: local only")
+            except Exception as e:
+                out.append(f"{f}: ERR {e}")
+    await context.bot.send_message(chat_id=ADMIN_ID, text="PUSHED LOCAL -> GITHUB:\n"+"\n".join(out)+"\n\nNow do /start again - you should see 8")
 
 async def add_balance_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
@@ -753,7 +794,6 @@ async def add_loyalty_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}\nUse /addloyalty 123456789 | 8.37")
 
-# === SAFE SAVEALL - WILL NOT DELETE ===
 async def saveall_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
     try: await update.message.delete()
@@ -781,6 +821,8 @@ def run_bot():
     b.add_handler(CommandHandler("addbalance",add_balance_cmd))
     b.add_handler(CommandHandler("addloyalty",add_loyalty_cmd))
     b.add_handler(CommandHandler("saveall",saveall_cmd))
+    b.add_handler(CommandHandler("fixcats",fixcats_cmd))
+    b.add_handler(CommandHandler("pushall",pushall_cmd))
     b.add_handler(CallbackQueryHandler(button_handler))
     b.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u,c: None))
     b.run_polling(drop_pending_updates=True)
