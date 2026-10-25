@@ -16,14 +16,15 @@ CATEGORIES_FILE = "categories.json"
 ORDERS_FILE = "orders.json"
 USERS_FILE = "users.json"
 CARTS_FILE = "carts.json"
+BASE_STOCK_FILE = "base_stock.json"
 
 DEFAULT_CATEGORIES = [
-    {"id": "shop", "name": "🛒Shop CC", "file": "products.json"},
-    {"id": "shop_low", "name": "⬇️SHOP LOW % SNIFF [Med-Low Bal]", "file": "products_low.json"},
-    {"id": "shop_high", "name": "⬆️SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"},
-    {"id": "shop_tees", "name": "🥊Shop Accounts", "file": "products_tees.json"},
-    {"id": "shop_food", "name": "🥙Shop Food", "file": "products_food.json"},
-    {"id": "shop_accessories", "name": "🥇Shop BINs", "file": "products_accessories.json"}
+    {"id": "shop", "name": "💳Shop CC", "file": "products.json", "base": False},
+    {"id": "shop_low", "name": "🔻SHOP LOW % [Med-Low Bal]", "file": "products_low.json", "base": False},
+    {"id": "shop_high", "name": "⚡️SHOP HIGH % [High Bal]", "file": "products_high.json", "base": False},
+    {"id": "shop_tees", "name": "🧾Shop Accounts", "file": "products_tees.json", "base": False},
+    {"id": "shop_food", "name": "🌯Shop Food", "file": "products_food.json", "base": False},
+    {"id": "shop_accessories", "name": "🥇Shop BINs", "file": "products_accessories.json", "base": False}
 ]
 MAIN_MENU_ORDER = ["shop", "shop_tees", "shop_food", "shop_accessories"]
 
@@ -36,7 +37,7 @@ def safe_float(v, default=0.0):
     except: return default
 
 def gh_headers():
-    return {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd. github.v3+json"}
+    return {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd. 【entity-github¦canonical_name=GitHub】.v3+json"}
 
 def load_json(path, default):
     gh=None
@@ -96,18 +97,26 @@ def force_push_json(path, data):
 
 def get_categories():
     cats=load_json(CATEGORIES_FILE, DEFAULT_CATEGORIES)
-    ids=[c["id"] for c in cats]
-    if "shop_high" not in ids:
-        cats.append({"id": "shop_high", "name": "SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"})
-        save_json(CATEGORIES_FILE,cats)
+    changed=False
+    for c in cats:
+        if "base" not in c:
+            c["base"]=False; changed=True
+    if "shop_high" not in [c["id"] for c in cats]:
+        cats.append({"id": "shop_high", "name": "⚡️SHOP HIGH % [High Bal]", "file": "products_high.json", "base": False}); changed=True
+    if changed: save_json(CATEGORIES_FILE,cats)
     return cats
 
 def get_cat_by_id(cat_id):
-    if cat_id=="shop_high": return {"id": "shop_high", "name": "SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"}
-    if cat_id=="shop_low": return {"id": "shop_low", "name": "SHOP LOW % SNIFF [Med-Low Bal]", "file": "products_low.json"}
     for c in get_categories():
         if c["id"]==cat_id: return c
+    if cat_id=="shop_high": return {"id": "shop_high", "name": "⚡️SHOP HIGH % [High Bal]", "file": "products_high.json", "base": False}
+    if cat_id=="shop_low": return {"id": "shop_low", "name": "🔻SHOP LOW % [Med-Low Bal]", "file": "products_low.json", "base": False}
     return None
+
+def is_base_category(cat_id):
+    cat=get_cat_by_id(cat_id)
+    if not cat: return False
+    return bool(cat.get("base", False))
 
 def get_loyalty_title(pct):
     if pct >= 100: return "SAINTLOCK ELITE"
@@ -171,6 +180,25 @@ def keep_alive_loop():
             requests.get("http://localhost:10000/",timeout=5)
         except: pass
 
+def base_key(cat_id, idx): return f"{cat_id}_{idx}"
+def get_base_stock(cat_id, idx):
+    all_stock=load_json(BASE_STOCK_FILE, {})
+    return all_stock.get(base_key(cat_id, idx), [])
+def set_base_stock(cat_id, idx, items):
+    all_stock=load_json(BASE_STOCK_FILE, {})
+    all_stock[base_key(cat_id, idx)]=items
+    save_json(BASE_STOCK_FILE, all_stock)
+    return len(items)
+def pop_base_item(cat_id, idx):
+    all_stock=load_json(BASE_STOCK_FILE, {})
+    k=base_key(cat_id, idx)
+    items=all_stock.get(k, [])
+    if not items: return None
+    item=items.pop(0)
+    all_stock[k]=items
+    save_json(BASE_STOCK_FILE, all_stock)
+    return item
+
 def get_cart(uid): return load_json(CARTS_FILE,{}).get(str(uid),[])
 def get_cart_total(uid):
     cart=get_cart(uid); total=sum(safe_float(it.get("total",0)) for it in cart); return total,len(cart)
@@ -226,10 +254,18 @@ def is_url(s): return s.startswith("http://") or s.startswith("https://")
 
 app=Flask(__name__)
 @app.route("/")
-def home(): return "LIVE - DEL FIXED"
+def home(): return "LIVE - BASE VIRTUAL STOCK - CONFLICT KILLER"
 def run_web(): app.run(host="0.0.0.0",port=int(os.environ.get("PORT",10000)))
 def is_admin(uid): return uid==ADMIN_ID
-async def post_init(app): await app.bot.set_my_commands([BotCommand("start","Open Shop Menu")])
+
+# FIX FOR CONFLICT - KILLS GHOST INSTANCE
+async def post_init(app):
+    try:
+        await app.bot.delete_webhook(drop_pending_updates=True)
+        print("Killed old webhook / other instance")
+    except Exception as e:
+        print(f"Webhook kill fail: {e}")
+    await app.bot.set_my_commands([BotCommand("start","Open Shop Menu")])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cats=get_categories()
@@ -245,7 +281,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for cid in MAIN_MENU_ORDER:
         if cid in cat_map:
             c=cat_map[cid]
-            kb.append([InlineKeyboardButton(c["name"], callback_data=f"cat_{c['id']}")])
+            label=c["name"]+(" ⚡" if c.get("base") else "")
+            kb.append([InlineKeyboardButton(label, callback_data=f"cat_{c['id']}")])
+    for cid, c in cat_map.items():
+        if cid not in MAIN_MENU_ORDER:
+            label=c["name"]+(" ⚡" if c.get("base") else "")
+            kb.append([InlineKeyboardButton(label, callback_data=f"cat_{c['id']}")])
+    if is_admin(update.effective_user.id):
+        kb.append([InlineKeyboardButton("🔧 Base Update (Admin)", callback_data="base_admin")])
     kb.append([InlineKeyboardButton(f"🛒 {count}", callback_data="viewcart"), InlineKeyboardButton(f"💰", callback_data="balance"), InlineKeyboardButton(f"📞", callback_data="support")])
     await update.message.reply_text(caption, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
 
@@ -290,9 +333,14 @@ async def show_category(q,cat_id,is_admin_view=False):
                 if o.get("price") is not None:
                     fv=safe_float(o.get("price"), fp)
                     if fv < fp or fp==0: fp=fv
-            kb.append([InlineKeyboardButton(f"{p['name']} - From ${fp:.2f}",callback_data=f"view_{cat_id}_{i}")])
+            extra=""
+            if cat.get("base"):
+                cnt=len(get_base_stock(cat_id,i))
+                extra=f" [{cnt}/40 left]"
+            kb.append([InlineKeyboardButton(f"{p['name']} - From ${fp:.2f}{extra}",callback_data=f"view_{cat_id}_{i}")])
         kb.append([InlineKeyboardButton("Back",callback_data="back")])
-        text=f"⚫ *{cat['name']}* - {len(products)} items"
+        base_note=" ⚡ AUTO-DELIVERY - No SS Needed" if cat.get("base") else ""
+        text=f"⚫ *{cat['name']}*{base_note} - {len(products)} items"
         if q.message.photo:
             await q.message.delete()
             await q.message.chat.send_message(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
@@ -339,6 +387,23 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try: await q.answer()
     except: pass
     d=q.data; uid=q.from_user.id; username=q.from_user.username or "no_username"
+    if d=="base_admin":
+        if not is_admin(uid):
+            await q.answer("⛔ Admins Only", show_alert=True); return
+        cats=get_categories()
+        txt="🔴⚫ *BASE UPDATE - ADMIN ONLY* ⚫🔴\n\nCategories:\n"
+        for c in cats:
+            txt+=f"• {c['id']} - {c['name']} - Base: {c.get('base')}\n"
+        txt+="\nCommands:\n/addcategory id | Name | True/False\n/addbase cat | idx | item1,item2\n/listbase cat | idx\n/listcategories"
+        kb=[[InlineKeyboardButton("Back",callback_data="back")]]
+        try:
+            if q.message.photo:
+                await q.message.delete()
+                await q.message.chat.send_message(txt, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+            else:
+                await q.edit_message_text(txt, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
+        except: pass
+        return
     if d=="cat_shop_low":
         await show_category(q,"shop_low", is_admin_view=is_admin(uid)); return
     if d=="cat_shop_high":
@@ -365,7 +430,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for cid in MAIN_MENU_ORDER:
             if cid in cat_map:
                 c=cat_map[cid]
-                kb.append([InlineKeyboardButton(c["name"], callback_data=f"cat_{c['id']}")])
+                kb.append([InlineKeyboardButton(c["name"]+(" ⚡" if c.get("base") else ""), callback_data=f"cat_{c['id']}")])
+        for cid,c in cat_map.items():
+            if cid not in MAIN_MENU_ORDER:
+                kb.append([InlineKeyboardButton(c["name"]+(" ⚡" if c.get("base") else ""), callback_data=f"cat_{c['id']}")])
+        if is_admin(uid):
+            kb.append([InlineKeyboardButton("🔧 Base Update (Admin)", callback_data="base_admin")])
         kb.append([InlineKeyboardButton(f"🛒 {count}",callback_data="viewcart"), InlineKeyboardButton(f"💰",callback_data="balance"), InlineKeyboardButton(f"📞",callback_data="support")])
         try:
             if q.message.photo:
@@ -427,21 +497,43 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await q.message.chat.send_message("Cart empty")
             except: pass
             return
+        for it in cart:
+            if is_base_category(it.get("category","")):
+                cnt=len(get_base_stock(it.get("category",""), it.get("product_idx",0)))
+                if cnt < it.get("qty",1):
+                    await q.message.chat.send_message(f"❌ {it['name']} is out of stock in Base - Only {cnt} left. Remove it or lower qty.")
+                    return
         total=sum(safe_float(it.get("total",0)) for it in cart); order_id=gen_id()
         orders=load_json(ORDERS_FILE,[]); item_list="\n".join([f"- {it['name']} {it.get('option','')} x{it['qty']} = ${safe_float(it['total']):.2f}" for it in cart])
-        orders.append({"order_id":order_id,"user_id":uid,"username":username,"product":f"CART {len(cart)} items","price":total,"method":method,"status":"pending","items":cart,"total":total}); save_json(ORDERS_FILE,orders)
+        base_deliveries=[]
+        for it in cart:
+            if is_base_category(it.get("category","")):
+                for _ in range(it.get("qty",1)):
+                    code=pop_base_item(it.get("category",""), it.get("product_idx",0))
+                    if code: base_deliveries.append(f"{it['name']}: `{code}`")
+        orders.append({"order_id":order_id,"user_id":uid,"username":username,"product":f"CART {len(cart)} items","price":total,"method":method,"status":"auto-delivered" if base_deliveries else "pending","items":cart,"total":total,"base_deliveries":base_deliveries}); save_json(ORDERS_FILE,orders)
         if method=="bal":
             if get_user(uid).get("balance",0)<total:
                 await q.message.chat.send_message(f"❌ You need ${total:.2f} but you have ${get_user(uid).get('balance',0):.2f}"); return
             new_bal=deduct_balance(uid,total); clear_cart(uid)
             u=get_user(uid)
-            await q.message.chat.send_message(f"✅ CART PAID ${total:.2f} Order {order_id}\n{item_list}\nNew Bal ${new_bal:.2f}\nLoyalty: {u.get('loyalty',0)}% [{get_loyalty_title(u.get('loyalty',0))}]\n\nPlease send your order # and a ss of this order to support {SUPPORT_HANDLE} to complete this order")
+            if base_deliveries:
+                await q.message.chat.send_message(f"✅ CART PAID ${total:.2f} Order {order_id}\n{item_list}\n\n⚡ *AUTO-DELIVERED - YOUR ITEMS:*\n"+"\n".join(base_deliveries)+f"\n\nNew Bal ${new_bal:.2f}\nLoyalty: {u.get('loyalty',0)}% [{get_loyalty_title(u.get('loyalty',0))}]", parse_mode="Markdown")
+            else:
+                await q.message.chat.send_message(f"✅ CART PAID ${total:.2f} Order {order_id}\n{item_list}\nNew Bal ${new_bal:.2f}\nLoyalty: {u.get('loyalty',0)}% [{get_loyalty_title(u.get('loyalty',0))}]\n\nPlease send your order # and a ss of this order to support {SUPPORT_HANDLE} to complete this order")
         elif method=="btc":
-            clear_cart(uid); await q.message.chat.send_message(f"Order {order_id} ${total:.2f} BTC: {BTC_WALLET}\n\nPlease send your order # and a ss of this order to support {SUPPORT_HANDLE} to complete this order")
+            clear_cart(uid)
+            if base_deliveries:
+                await q.message.chat.send_message(f"Order {order_id} ${total:.2f} BTC: {BTC_WALLET}\n\n⚡ *AUTO-DELIVERED AFTER PAYMENT - YOUR ITEMS WILL BE SENT ON CONFIRM*\nOrder paid? Send ss to {SUPPORT_HANDLE} and your codes will be delivered automatically.\n\nYour items reserved:\n"+"\n".join(base_deliveries), parse_mode="Markdown")
+            else:
+                await q.message.chat.send_message(f"Order {order_id} ${total:.2f} BTC: {BTC_WALLET}\n\nPlease send your order # and a ss of this order to support {SUPPORT_HANDLE} to complete this order")
         else:
-            clear_cart(uid); await q.message.chat.send_message(f"Order {order_id} ${total:.2f} CashApp: {CASHAPP_TAG}\n\nPlease send your order # and a ss of this order to support {SUPPORT_HANDLE} to complete this order")
+            clear_cart(uid)
+            if base_deliveries:
+                await q.message.chat.send_message(f"Order {order_id} ${total:.2f} CashApp: {CASHAPP_TAG}\n\n⚡ AUTO-DELIVERED ITEMS:\n"+"\n".join(base_deliveries), parse_mode="Markdown")
+            else:
+                await q.message.chat.send_message(f"Order {order_id} ${total:.2f} CashApp: {CASHAPP_TAG}\n\nPlease send your order # and a ss of this order to support {SUPPORT_HANDLE} to complete this order")
         return
-
     if d.startswith("view_"):
         parts=d.replace("view_","").rsplit("_",1); cat_id=parts[0]; idx=int(parts[1])
         cat=get_cat_by_id(cat_id); p=load_json(cat["file"],[])[idx]
@@ -463,7 +555,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data[f"optmin_{cat_id}_{idx}"]=p.get("min_qty")
             context.user_data[f"optmax_{cat_id}_{idx}"]=p.get("max_qty")
         await send_product_view(q,cat_id,idx,context,uid); return
-
     if d.startswith("seloptview_"):
         rest=d.replace("seloptview_",""); cat_part,idx_part,opt_name=rest.split("|",2); cat_id=cat_part; idx=int(idx_part)
         cat=get_cat_by_id(cat_id); prod=load_json(cat["file"],[])[idx]
@@ -479,7 +570,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data[f"optmax_{cat_id}_{idx}"]=opt_obj.get("max_qty")
         context.user_data[f"optstock_{cat_id}_{idx}"]=opt_obj.get("stock")
         await send_product_view(q,cat_id,idx,context,uid); return
-
     if d.startswith("qtyviewminus_") or d.startswith("qtyviewplus_"):
         is_plus=d.startswith("qtyviewplus_"); rest=d.replace("qtyviewminus_","").replace("qtyviewplus_","")
         cat_id,idx_str=rest.rsplit("|",1); idx=int(idx_str)
@@ -498,7 +588,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if qty>min_q: qty-=1
             else: await q.answer(f"Min is {min_q}", show_alert=True); return
         context.user_data[key]=qty; await send_product_view(q,cat_id,idx,context,uid); return
-
     if d.startswith("addcart_"):
         rest=d.replace("addcart_",""); cat_id,idx_str=rest.rsplit("|",1); idx=int(idx_str)
         cat=get_cat_by_id(cat_id); prod=load_json(cat["file"],[])[idx]
@@ -506,21 +595,28 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         opt=context.user_data.get(f"opt_{cat_id}_{idx}",""); unit=safe_float(context.user_data.get(f"optprice_{cat_id}_{idx}", safe_float(prod.get("price",0)))); total=unit*qty
         item={"name":prod["name"],"category":cat_id,"product_idx":idx,"option":opt,"unit_price":unit,"qty":qty,"total":total}
         count=add_to_cart(uid,item); await q.answer(f"Added! 🛒 {count}"); await send_product_view(q,cat_id,idx,context,uid,added=True); return
-
     if d.startswith("buynow_"):
         try:
             rest=d.replace("buynow_",""); cat_id,idx_str=rest.rsplit("|",1); idx=int(idx_str)
             cat=get_cat_by_id(cat_id); prod=load_json(cat["file"],[])[idx]
             qty=int(context.user_data.get(f"qty_{cat_id}_{idx}", int(prod.get("min_qty",1))))
             opt=context.user_data.get(f"opt_{cat_id}_{idx}",""); unit=safe_float(context.user_data.get(f"optprice_{cat_id}_{idx}", safe_float(prod.get("price",0)))); total=unit*qty; order_id=gen_id()
-            orders=load_json(ORDERS_FILE,[]); orders.append({"order_id":order_id,"user_id":uid,"username":username,"product":prod["name"],"price":unit,"quantity":qty,"total":total,"selected_option":opt,"selected_price":unit,"category":cat_id,"product_idx":idx,"method":"buynow","status":"pending"}); save_json(ORDERS_FILE,orders)
-            txt=f"*{prod['name']}* {opt} x{qty} = *${total:.2f}* Order `{order_id}`\n\nPlease send your order # and a ss of this order to support {SUPPORT_HANDLE} to complete this order"
+            is_base = is_base_category(cat_id)
+            if is_base:
+                cnt=len(get_base_stock(cat_id, idx))
+                if cnt < qty:
+                    await q.message.chat.send_message(f"❌ {prod['name']} - Only {cnt} left in base. Can't buy {qty}.")
+                    return
+            orders=load_json(ORDERS_FILE,[]); orders.append({"order_id":order_id,"user_id":uid,"username":username,"product":prod["name"],"price":unit,"quantity":qty,"total":total,"selected_option":opt,"selected_price":unit,"category":cat_id,"product_idx":idx,"method":"buynow","status":"pending","is_base":is_base}); save_json(ORDERS_FILE,orders)
+            if is_base:
+                txt=f"⚡ *{prod['name']}* {opt} x{qty} = *${total:.2f}* Order `{order_id}`\n\n*AUTO-DELIVERY ITEM* - Pay and get it instantly, no SS needed!"
+            else:
+                txt=f"*{prod['name']}* {opt} x{qty} = *${total:.2f}* Order `{order_id}`\n\nPlease send your order # and a ss of this order to support {SUPPORT_HANDLE} to complete this order"
             kb=[[InlineKeyboardButton(f"${total:.2f} Pay with Balance",callback_data=f"paybalnow_{order_id}")],[InlineKeyboardButton(f"BTC",callback_data=f"paybtcnow_{order_id}"),InlineKeyboardButton(f"Cash",callback_data=f"paycashnow_{order_id}")],[InlineKeyboardButton("Back",callback_data=f"cat_{cat_id}")]]
             await q.message.chat.send_message(txt, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
         except Exception as e:
             await q.message.chat.send_message(f"Buy Now error: {e}")
         return
-
     if d.startswith("paybalnow_"):
         order_id=d[len("paybalnow_"):]; method="bal"
     elif d.startswith("paybtcnow_"):
@@ -534,16 +630,37 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for o in orders:
             if o["order_id"]==order_id:
                 total=safe_float(o.get("total",0))
+                is_base = o.get("is_base") or is_base_category(o.get("category",""))
                 if method=="bal":
                     if get_user(uid).get("balance",0)<total:
                         await q.message.chat.send_message(f"❌ You need ${total:.2f} but have ${get_user(uid).get('balance',0):.2f}"); return
-                    new_bal=deduct_balance(uid,total); o["status"]="approved"; save_json(ORDERS_FILE,orders)
-                    u=get_user(uid)
-                    await q.message.chat.send_message(f"✅ SUCCESS {order_id} ${total:.2f} New Bal ${new_bal:.2f}\n⭐ Loyalty: {u.get('loyalty',0)}% [{get_loyalty_title(u.get('loyalty',0))}]\n\nPlease send your order # and a ss of this order to support {SUPPORT_HANDLE} to complete this order")
+                    new_bal=deduct_balance(uid,total)
+                    if is_base:
+                        deliveries=[]
+                        qty=o.get("quantity",1)
+                        for _ in range(qty):
+                            code=pop_base_item(o.get("category",""), o.get("product_idx",0))
+                            if code: deliveries.append(code)
+                        o["status"]="auto-delivered"; o["deliveries"]=deliveries; save_json(ORDERS_FILE,orders)
+                        u=get_user(uid)
+                        if deliveries:
+                            await q.message.chat.send_message(f"✅ SUCCESS {order_id} ${total:.2f} New Bal ${new_bal:.2f}\n⭐ Loyalty: {u.get('loyalty',0)}% [{get_loyalty_title(u.get('loyalty',0))}]\n\n⚡ *YOUR ITEMS - AUTO DELIVERED:*\n"+"\n".join([f"`{c}`" for c in deliveries]), parse_mode="Markdown")
+                        else:
+                            await q.message.chat.send_message(f"✅ PAID but base empty - contact {SUPPORT_HANDLE} Order {order_id}")
+                    else:
+                        o["status"]="approved"; save_json(ORDERS_FILE,orders)
+                        u=get_user(uid)
+                        await q.message.chat.send_message(f"✅ SUCCESS {order_id} ${total:.2f} New Bal ${new_bal:.2f}\n⭐ Loyalty: {u.get('loyalty',0)}% [{get_loyalty_title(u.get('loyalty',0))}]\n\nPlease send your order # and a ss of this order to support {SUPPORT_HANDLE} to complete this order")
                 elif method=="btc":
-                    await q.message.chat.send_message(f"Order {order_id} ${total:.2f} BTC: {BTC_WALLET}\n\nPlease send your order # and a ss of this order to support {SUPPORT_HANDLE} to complete this order")
+                    if is_base:
+                        await q.message.chat.send_message(f"⚡ Order {order_id} ${total:.2f} BTC: {BTC_WALLET}\n\n*BASE ITEM - After you pay, send SS to {SUPPORT_HANDLE} and code will auto-send. Your code is reserved.*")
+                    else:
+                        await q.message.chat.send_message(f"Order {order_id} ${total:.2f} BTC: {BTC_WALLET}\n\nPlease send your order # and a ss of this order to support {SUPPORT_HANDLE} to complete this order")
                 else:
-                    await q.message.chat.send_message(f"Order {order_id} ${total:.2f} CashApp: {CASHAPP_TAG}\n\nPlease send your order # and a ss of this order to support {SUPPORT_HANDLE} to complete this order")
+                    if is_base:
+                        await q.message.chat.send_message(f"⚡ Order {order_id} ${total:.2f} CashApp: {CASHAPP_TAG}\n\n*BASE ITEM - Pay and send SS, code auto-sends.*")
+                    else:
+                        await q.message.chat.send_message(f"Order {order_id} ${total:.2f} CashApp: {CASHAPP_TAG}\n\nPlease send your order # and a ss of this order to support {SUPPORT_HANDLE} to complete this order")
                 break
         return
 
@@ -584,7 +701,11 @@ async def send_product_view(q,cat_id,idx,context,uid,added=False):
         qty_line = f"Min {cur_min} | Qty: {qty} = ${total:.2f}"
     sel_text=f"\n🔴 Selected: {opt} - ${unit:.2f}" if opt else f"\n🔴 {price_line}"
     added_text="\n\n✅ Added to 🛒!" if added else ""
-    text=f"⚫ *{prod['name']}*{sel_text}\n\n📝 {prod['desc']}\n\n{qty_line}\nTotal: *${total:.2f}*{added_text}"
+    base_info=""
+    if cat.get("base"):
+        cnt=len(get_base_stock(cat_id, idx))
+        base_info=f"\n⚡ *AUTO-DELIVERY* - {cnt}/40 in base - No SS needed"
+    text=f"⚫ *{prod['name']}*{sel_text}\n\n📝 {prod['desc']}\n\n{qty_line}\nTotal: *${total:.2f}*{base_info}{added_text}"
     kb=[]
     if options:
         for o in options:
@@ -645,7 +766,8 @@ async def add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if options: new_prod["options"]=options
         if image_url and is_url(image_url): new_prod["image"]=image_url
         prods.append(new_prod); save_json(cat["file"],prods)
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"✅ Saved '{name}' From ${price} Min {min_q} Image: {'Yes' if image_url else 'No'} - File now has {len(prods)} items")
+        is_base = cat.get("base", False) if cat else False
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"✅ Saved '{name}' From ${price} Min {min_q} Base: {is_base} Image: {'Yes' if image_url else 'No'} - File now has {len(prods)} items\n"+(f"Now add base items: /addbase {cat_id} | {len(prods)-1} | CODE1, CODE2" if is_base else ""))
     except Exception as e: await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}")
 
 async def del_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -670,6 +792,10 @@ async def del_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         removed=prods.pop(idx)
         gh_status=force_push_json(cat["file"], prods)
+        all_stock=load_json(BASE_STOCK_FILE, {})
+        if base_key(cat_id, idx) in all_stock:
+            del all_stock[base_key(cat_id, idx)]
+            save_json(BASE_STOCK_FILE, all_stock)
         verify=load_json(cat["file"],[])
         await context.bot.send_message(chat_id=ADMIN_ID, text=f"🗑️ Deleted #{idx}: {removed['name']} from {cat['name']} ({cat['file']})\nGH Push: {gh_status}\nRemaining now: {len(verify)} items\n"+"\n".join([f"{i}: {p['name']}" for i,p in enumerate(verify)][:10])+"\n\nNow do /start - it should be GONE. DO NOT run /pushall after delete!")
     except Exception as e:
@@ -738,22 +864,15 @@ async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=ADMIN_ID, text=f"Category {cat_id} not found")
         return
     prods=load_json(cat["file"],[])
-    txt="\n".join([f"{i}: {p['name']} - ${safe_float(p.get('price',0)):.2f} {'[IMG]' if p.get('image') else '[NO IMG]'}" for i,p in enumerate(prods)])
+    txt="\n".join([f"{i}: {p['name']} - ${safe_float(p.get('price',0)):.2f} {'[IMG]' if p.get('image') else '[NO IMG]'} BaseStock:{len(get_base_stock(cat_id,i)) if cat.get('base') else '-'}" for i,p in enumerate(prods)])
     if not txt: txt="Empty"
-    await context.bot.send_message(chat_id=ADMIN_ID, text=f"CAT: {cat['id']} -> FILE: {cat['file']}\nName: {cat['name']} {len(prods)}:\n{txt[:3500]}")
+    await context.bot.send_message(chat_id=ADMIN_ID, text=f"CAT: {cat['id']} -> FILE: {cat['file']} Base: {cat.get('base')}\nName: {cat['name']} {len(prods)}:\n{txt[:3500]}")
 
 async def fixcats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
     try: await update.message.delete()
     except: pass
-    cats = [
-        {"id": "shop", "name": "Shop CC", "file": "products.json"},
-        {"id": "shop_low", "name": "SHOP LOW % SNIFF [Med-Low Bal]", "file": "products_low.json"},
-        {"id": "shop_high", "name": "SHOP HIGH % SNIFF [High Bal]", "file": "products_high.json"},
-        {"id": "shop_tees", "name": "Shop Accounts", "file": "products_tees.json"},
-        {"id": "shop_food", "name": "Shop Food", "file": "products_food.json"},
-        {"id": "shop_accessories", "name": "Shop Accessories", "file": "products_accessories.json"}
-    ]
+    cats = DEFAULT_CATEGORIES
     save_json(CATEGORIES_FILE, cats)
     await context.bot.send_message(chat_id=ADMIN_ID, text="✅ FIXED CATEGORIES\nshop_tees (Shop Accounts) -> products_tees.json")
 
@@ -762,7 +881,7 @@ async def pushall_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try: await update.message.delete()
     except: pass
     cats=get_categories()
-    files=[CATEGORIES_FILE,ORDERS_FILE,USERS_FILE,CARTS_FILE]+[c["file"] for c in cats]
+    files=[CATEGORIES_FILE,ORDERS_FILE,USERS_FILE,CARTS_FILE,BASE_STOCK_FILE]+[c["file"] for c in cats]
     out=[]
     for f in set(files):
         if os.path.exists(f):
@@ -803,7 +922,7 @@ async def saveall_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
     try: await update.message.delete()
     except: pass
-    cats=get_categories(); files=[CATEGORIES_FILE,ORDERS_FILE,USERS_FILE,CARTS_FILE]+[c["file"] for c in cats]
+    cats=get_categories(); files=[CATEGORIES_FILE,ORDERS_FILE,USERS_FILE,CARTS_FILE,BASE_STOCK_FILE]+[c["file"] for c in cats]
     out=[]
     for f in set(files):
         data=load_json(f, [])
@@ -812,6 +931,97 @@ async def saveall_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             out.append(f"{f}: {len(data)} keys - SAFE")
     await context.bot.send_message(chat_id=ADMIN_ID, text="SAFE SAVE - Nothing deleted:\n"+"\n".join(out))
+
+async def add_category_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    try:
+        raw=update.message.text.split(" ",1)[1]
+        parts=[x.strip() for x in raw.split("|")]
+        cat_id=parts[0].lower().replace(" ","_")
+        name=parts[1] if len(parts)>1 else cat_id
+        base_str=parts[2].lower() if len(parts)>2 else "false"
+        is_base = base_str in ["true","yes","1","base","on"]
+        cats=get_categories()
+        found=False
+        for c in cats:
+            if c["id"]==cat_id:
+                c["name"]=name; c["base"]=is_base; found=True
+        if not found:
+            file_name=f"products_{cat_id}.json"
+            if cat_id=="giftcards": file_name="products_giftcards.json"
+            cats.append({"id":cat_id,"name":name,"file":file_name,"base":is_base})
+            if not os.path.exists(file_name):
+                save_json(file_name, [])
+        save_json(CATEGORIES_FILE, cats)
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"✅ Category Added/Updated\nID: {cat_id}\nName: {name}\nBase: {is_base}\nFile: {get_cat_by_id(cat_id)['file']}\n\n{'⚡ This is a BASE category - products here will AUTO-DELIVER, no SS needed.' if is_base else '📩 Normal category - still needs SS.'}\n\nNow do /start to see it.")
+    except Exception as e:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}\nUse: /addcategory giftcards | Giftcards | True")
+
+async def list_categories_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    cats=get_categories()
+    txt="\n".join([f"{c['id']} | {c['name']} | Base: {c.get('base',False)} | File: {c['file']}" for c in cats])
+    await context.bot.send_message(chat_id=ADMIN_ID, text=f"CATEGORIES:\n{txt}")
+
+async def add_base_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    try:
+        raw=update.message.text.split(" ",1)[1]
+        parts=[x.strip() for x in raw.split("|",2)]
+        cat_id=parts[0].lower(); idx=int(parts[1]); items_raw=parts[2]
+        if "\n" in items_raw:
+            new_items=[x.strip() for x in items_raw.replace("\r","").split("\n") if x.strip()]
+        else:
+            new_items=[x.strip() for x in items_raw.split(",") if x.strip()]
+        cat=get_cat_by_id(cat_id)
+        if not cat:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"Category {cat_id} not found"); return
+        if not cat.get("base"):
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"❌ {cat['name']} is NOT a Base category. Do /addcategory {cat_id} | {cat['name']} | True first"); return
+        prods=load_json(cat["file"],[])
+        if idx<0 or idx>=len(prods):
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"Index {idx} out of range, has {len(prods)}"); return
+        existing=get_base_stock(cat_id, idx)
+        if len(existing) + len(new_items) > 40:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"❌ Can't add {len(new_items)} - Already have {len(existing)}/40. Max 40 per product. Can add only {40-len(existing)} more."); return
+        updated=existing + new_items
+        set_base_stock(cat_id, idx, updated)
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"✅ Added {len(new_items)} to Base for {prods[idx]['name']} ({cat_id} #{idx})\nNow has {len(updated)}/40\n\nExample items:\n"+"\n".join(updated[:3]))
+    except Exception as e:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}\nUse: /addbase giftcards | 0 | CODE1, CODE2, CODE3")
+
+async def list_base_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    try:
+        raw=update.message.text.split(" ",1)[1]
+        parts=[x.strip() for x in raw.split("|")]
+        cat_id=parts[0].lower(); idx=int(parts[1])
+        items=get_base_stock(cat_id, idx)
+        cat=get_cat_by_id(cat_id); prods=load_json(cat["file"],[]) if cat else []
+        name=prods[idx]['name'] if idx < len(prods) else "?"
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"BASE for {name} ({cat_id} #{idx}) - {len(items)}/40:\n"+"\n".join([f"{i}: {it}" for i,it in enumerate(items)][:40]))
+    except Exception as e:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}\nUse: /listbase giftcards | 0")
+
+async def clear_base_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    try:
+        raw=update.message.text.split(" ",1)[1]
+        parts=[x.strip() for x in raw.split("|")]
+        cat_id=parts[0].lower(); idx=int(parts[1])
+        set_base_stock(cat_id, idx, [])
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"🗑️ Cleared base for {cat_id} #{idx}")
+    except Exception as e: await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}")
 
 def run_bot():
     b=ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
@@ -828,9 +1038,14 @@ def run_bot():
     b.add_handler(CommandHandler("saveall",saveall_cmd))
     b.add_handler(CommandHandler("fixcats",fixcats_cmd))
     b.add_handler(CommandHandler("pushall",pushall_cmd))
+    b.add_handler(CommandHandler("addcategory",add_category_cmd))
+    b.add_handler(CommandHandler("listcategories",list_categories_cmd))
+    b.add_handler(CommandHandler("addbase",add_base_cmd))
+    b.add_handler(CommandHandler("listbase",list_base_cmd))
+    b.add_handler(CommandHandler("clearbase",clear_base_cmd))
     b.add_handler(CallbackQueryHandler(button_handler))
     b.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u,c: None))
-    b.run_polling(drop_pending_updates=True)
+    b.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 if __name__=="__main__":
     threading.Thread(target=run_web,daemon=True).start()
