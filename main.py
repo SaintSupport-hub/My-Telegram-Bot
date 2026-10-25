@@ -19,11 +19,11 @@ CARTS_FILE = "carts.json"
 BASE_STOCK_FILE = "base_stock.json"
 
 DEFAULT_CATEGORIES = [
-    {"id": "shop", "name": "💳Shop CC", "file": "products.json", "base": False},
+    {"id": "shop", "name": "💳 Shop CC", "file": "products.json", "base": False},
     {"id": "shop_low", "name": "🔻SHOP LOW % [Med-Low Bal]", "file": "products_low.json", "base": False},
     {"id": "shop_high", "name": "⚡️SHOP HIGH % [High Bal]", "file": "products_high.json", "base": False},
-    {"id": "shop_tees", "name": "🧾Shop Accounts", "file": "products_tees.json", "base": False},
-    {"id": "shop_food", "name": "🌯Shop Food", "file": "products_food.json", "base": False},
+    {"id": "shop_tees", "name": "🧾 Shop Accounts", "file": "products_tees.json", "base": False},
+    {"id": "shop_food", "name": "🌯 Shop Food", "file": "products_food.json", "base": False},
     {"id": "shop_accessories", "name": "🥇Shop BINs", "file": "products_accessories.json", "base": False}
 ]
 MAIN_MENU_ORDER = ["shop", "shop_tees", "shop_food", "shop_accessories"]
@@ -37,7 +37,7 @@ def safe_float(v, default=0.0):
     except: return default
 
 def gh_headers():
-    return {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd. 【entity-github¦canonical_name=GitHub】.v3+json"}
+    return {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd. github.v3+json"}
 
 def load_json(path, default):
     gh=None
@@ -102,7 +102,7 @@ def get_categories():
         if "base" not in c:
             c["base"]=False; changed=True
     if "shop_high" not in [c["id"] for c in cats]:
-        cats.append({"id": "shop_high", "name": "⚡️SHOP HIGH % [High Bal]", "file": "products_high.json", "base": False}); changed=True
+        cats.append({"id": "shop_high", "name": "⚡️ SHOP HIGH % [High Bal]", "file": "products_high.json", "base": False}); changed=True
     if changed: save_json(CATEGORIES_FILE,cats)
     return cats
 
@@ -254,11 +254,10 @@ def is_url(s): return s.startswith("http://") or s.startswith("https://")
 
 app=Flask(__name__)
 @app.route("/")
-def home(): return "LIVE - BASE VIRTUAL STOCK - CONFLICT KILLER"
+def home(): return "LIVE - SAINTLOCK - BASE HIDDEN FROM USERS"
 def run_web(): app.run(host="0.0.0.0",port=int(os.environ.get("PORT",10000)))
 def is_admin(uid): return uid==ADMIN_ID
 
-# FIX FOR CONFLICT - KILLS GHOST INSTANCE
 async def post_init(app):
     try:
         await app.bot.delete_webhook(drop_pending_updates=True)
@@ -334,13 +333,19 @@ async def show_category(q,cat_id,is_admin_view=False):
                     fv=safe_float(o.get("price"), fp)
                     if fv < fp or fp==0: fp=fv
             extra=""
-            if cat.get("base"):
+            # ONLY ADMIN SEES BASE COUNT - USERS DON'T
+            if cat.get("base") and is_admin_view:
                 cnt=len(get_base_stock(cat_id,i))
-                extra=f" [{cnt}/40 left]"
+                extra=f" [{cnt}/40]"
             kb.append([InlineKeyboardButton(f"{p['name']} - From ${fp:.2f}{extra}",callback_data=f"view_{cat_id}_{i}")])
         kb.append([InlineKeyboardButton("Back",callback_data="back")])
-        base_note=" ⚡ AUTO-DELIVERY - No SS Needed" if cat.get("base") else ""
-        text=f"⚫ *{cat['name']}*{base_note} - {len(products)} items"
+        base_note=" ⚡ AUTO-DELIVERY " if cat.get("base") else ""
+        # Admin gets count in header too, users don't
+        if cat.get("base") and is_admin_view:
+            total_base=sum(len(get_base_stock(cat_id,i)) for i in range(len(products)))
+            text=f"⚫ *{cat['name']}*{base_note} - {len(products)} items - ADMIN: {total_base} codes in base"
+        else:
+            text=f"⚫ *{cat['name']}*{base_note} - {len(products)} items"
         if q.message.photo:
             await q.message.delete()
             await q.message.chat.send_message(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
@@ -394,7 +399,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         txt="🔴⚫ *BASE UPDATE - ADMIN ONLY* ⚫🔴\n\nCategories:\n"
         for c in cats:
             txt+=f"• {c['id']} - {c['name']} - Base: {c.get('base')}\n"
-        txt+="\nCommands:\n/addcategory id | Name | True/False\n/addbase cat | idx | item1,item2\n/listbase cat | idx\n/listcategories"
+        txt+="\nCommands:\n/addcategory id | Name | True/False\n/delcategory id\n/editcategory id | New Name | True/False\n/addbase cat | idx | item1,item2\n/listbase cat | idx\n/listcategories"
         kb=[[InlineKeyboardButton("Back",callback_data="back")]]
         try:
             if q.message.photo:
@@ -703,8 +708,11 @@ async def send_product_view(q,cat_id,idx,context,uid,added=False):
     added_text="\n\n✅ Added to 🛒!" if added else ""
     base_info=""
     if cat.get("base"):
-        cnt=len(get_base_stock(cat_id, idx))
-        base_info=f"\n⚡ *AUTO-DELIVERY* - {cnt}/40 in base - No SS needed"
+        if is_admin(uid):
+            cnt=len(get_base_stock(cat_id, idx))
+            base_info=f"\n⚡ *AUTO-DELIVERY* - ADMIN ONLY: {cnt}/40 in base - No SS needed"
+        else:
+            base_info=f"\n⚡ *AUTO-DELIVERY* - No SS needed"
     text=f"⚫ *{prod['name']}*{sel_text}\n\n📝 {prod['desc']}\n\n{qty_line}\nTotal: *${total:.2f}*{base_info}{added_text}"
     kb=[]
     if options:
@@ -959,6 +967,61 @@ async def add_category_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}\nUse: /addcategory giftcards | Giftcards | True")
 
+async def del_category_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    try:
+        raw=update.message.text.split(" ",1)[1].strip() if " " in update.message.text else ""
+        cat_id=raw.lower().replace(" ","_")
+        if not cat_id:
+            await context.bot.send_message(chat_id=ADMIN_ID, text="Use: /delcategory giftcards")
+            return
+        cats=get_categories()
+        found=None
+        for c in cats:
+            if c["id"]==cat_id: found=c; break
+        if not found:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"❌ Category {cat_id} not found\nUse /listcategories")
+            return
+        # block deleting main default ones accidentally? Allow but warn - user asked for it, so allow all
+        cats=[c for c in cats if c["id"]!=cat_id]
+        save_json(CATEGORIES_FILE, cats)
+        # also clean base stock for that cat
+        all_stock=load_json(BASE_STOCK_FILE, {})
+        keys_to_del=[k for k in list(all_stock.keys()) if k.startswith(cat_id+"_")]
+        for k in keys_to_del: del all_stock[k]
+        if keys_to_del: save_json(BASE_STOCK_FILE, all_stock)
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"🗑️ Deleted Category: {found['name']} ({cat_id})\nFile was: {found['file']}\nRemoved from menu. Products file still on GitHub if you need it.\n\nDo /start to confirm it's gone.")
+    except Exception as e:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}\nUse: /delcategory giftcards")
+
+async def edit_category_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id): return
+    try: await update.message.delete()
+    except: pass
+    try:
+        raw=update.message.text.split(" ",1)[1]
+        parts=[x.strip() for x in raw.split("|")]
+        cat_id=parts[0].lower().replace(" ","_")
+        new_name=parts[1] if len(parts)>1 else ""
+        base_str=parts[2].lower() if len(parts)>2 else ""
+        cats=get_categories()
+        found=None
+        for c in cats:
+            if c["id"]==cat_id: found=c; break
+        if not found:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"❌ Category {cat_id} not found\nUse /listcategories")
+            return
+        old_name=found["name"]; old_base=found.get("base", False)
+        if new_name: found["name"]=new_name
+        if base_str:
+            found["base"]=base_str in ["true","yes","1","base","on"]
+        save_json(CATEGORIES_FILE, cats)
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"✅ Edited Category {cat_id}\nName: {old_name} -> {found['name']}\nBase: {old_base} -> {found.get('base')}\nFile: {found['file']}\n\nDo /start to see it.")
+    except Exception as e:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Error: {e}\nUse: /editcategory giftcards | New Name | True\nOr: /editcategory giftcards | New Name\nOr: /editcategory giftcards | | False (keep name, change base)")
+
 async def list_categories_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
     try: await update.message.delete()
@@ -1039,6 +1102,8 @@ def run_bot():
     b.add_handler(CommandHandler("fixcats",fixcats_cmd))
     b.add_handler(CommandHandler("pushall",pushall_cmd))
     b.add_handler(CommandHandler("addcategory",add_category_cmd))
+    b.add_handler(CommandHandler("delcategory",del_category_cmd))
+    b.add_handler(CommandHandler("editcategory",edit_category_cmd))
     b.add_handler(CommandHandler("listcategories",list_categories_cmd))
     b.add_handler(CommandHandler("addbase",add_base_cmd))
     b.add_handler(CommandHandler("listbase",list_base_cmd))
